@@ -456,6 +456,51 @@ const App = {
     this.showToast('実績を保存しました');
   },
 
+  // 作業項目チェック → 実績を自動作成（モーダルなし）
+  createEntryFromWorkItem(itemName) {
+    const defaults = (typeof WORK_ITEM_DEFAULTS !== 'undefined') ? WORK_ITEM_DEFAULTS[itemName] : null;
+
+    // 現在時刻
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+
+    const entry = {
+      title: itemName,
+      catalyst: (defaults && defaults.catalyst) ? defaults.catalyst : '',
+      start: `${hh}:${mm}`,
+      end: '',
+      fcCount: '',
+      fcTotal: '',
+      level: '',
+      note: '',
+      _fromWorkItem: true  // 作業項目から自動生成されたことを示すフラグ
+    };
+
+    // リアクターにエントリー追加
+    if (!this._currentData.reactors) {
+      this._currentData.reactors = { 'RX-01A': { entries: [], notes: '' }, 'RX-02A': { entries: [], notes: '' } };
+    }
+    const rx = this._currentData.reactors[this.currentReactor];
+    if (!rx.entries) rx.entries = [];
+    rx.entries.push(entry);
+    this.renderEntries();
+  },
+
+  // 作業項目チェック解除 → 対応する実績を削除
+  removeEntryFromWorkItem(itemName) {
+    const rx = this._currentData?.reactors?.[this.currentReactor];
+    if (!rx || !rx.entries) return;
+    // 同じタイトルで自動生成されたエントリーを削除（最後に追加されたものから）
+    for (let i = rx.entries.length - 1; i >= 0; i--) {
+      if (rx.entries[i].title === itemName && rx.entries[i]._fromWorkItem) {
+        rx.entries.splice(i, 1);
+        break;
+      }
+    }
+    this.renderEntries();
+  },
+
   deleteEntry(idx) {
     if (!confirm('この実績を削除しますか？')) return;
     const rx = this._currentData.reactors[this.currentReactor];
@@ -486,8 +531,15 @@ const App = {
       items.forEach(item => {
         const row = document.createElement('label');
         row.className = 'work-check-row';
-        row.innerHTML = `<input type="checkbox" class="work-check" data-item="${catKey}:${item}"><span>${item}</span>`;
-        row.querySelector('input').addEventListener('change', () => this.autoSave());
+        row.innerHTML = `<input type="checkbox" class="work-check" data-item="${catKey}:${item}" data-name="${item}"><span>${item}</span>`;
+        row.querySelector('input').addEventListener('change', (e) => {
+          if (e.target.checked) {
+            this.createEntryFromWorkItem(item);
+          } else {
+            this.removeEntryFromWorkItem(item);
+          }
+          this.autoSave();
+        });
         list.appendChild(row);
       });
       section.appendChild(list);

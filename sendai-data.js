@@ -149,3 +149,39 @@ const REACTORS = ['RX-01A', 'RX-02A'];
 
 // 担当者リストはアプリ内の設定画面で登録する（個人情報はコードに含めない）
 // localStorage の 'vha_staff' キーに保存される
+
+// 作業項目→実績入力のデフォルト値マッピング
+// fields: どの入力欄を表示するか (catalyst, fc, level)
+// catalyst: 自動選択する触媒名（部分一致で候補を絞る）
+const WORK_ITEM_DEFAULTS = {
+  // ---- 抜出作業 → FC・レベル入力あり ----
+  '1st BED 触媒抜出':   { fields: ['fc','level'], catalyst: '' },
+  '2nd BED 触媒抜出':   { fields: ['fc','level'], catalyst: '' },
+  '3rd BED 触媒抜出':   { fields: ['fc','level'], catalyst: '' },
+  '掘削機抜出【1stBED】': { fields: ['fc','level'], catalyst: '' },
+  '掘削機抜出【2ndBED】': { fields: ['fc','level'], catalyst: '' },
+
+  // ---- 触媒充填 → 触媒名・FC・レベル入力あり ----
+  '3rd BED ｾﾗﾐｯｸﾎﾞｰﾙ充填(1/8)': { fields: ['catalyst','fc','level'], catalyst: 'CB 1/8B' },
+  '3rd BED JE充填':              { fields: ['catalyst','fc','level'], catalyst: 'KFR 33-1.3Q' },
+  '3rd BED Sock充填':            { fields: ['catalyst','fc','level'], catalyst: 'KFR 50-1.3Q' },
+  '2nd BED ｾﾗﾐｯｸﾎﾞｰﾙ充填(1/8)': { fields: ['catalyst','fc','level'], catalyst: 'CB 1/8B' },
+  '2nd BED JE充填':              { fields: ['catalyst','fc','level'], catalyst: 'KFR 24-1.3Q' },
+  '2nd BED Sock充填':            { fields: ['catalyst','fc','level'], catalyst: 'KFR 24-1.5Q' },
+  '1st BED ｾﾗﾐｯｸﾎﾞｰﾙ充填(1/8)': { fields: ['catalyst','fc','level'], catalyst: 'CB 1/8B' },
+  '1st BED Sock充填':            { fields: ['catalyst','fc','level'], catalyst: 'KG 5M-3Q' },
+  '3rd BED 充填前確認':           { fields: [], catalyst: '' },
+  '2nd BED 充填前確認':           { fields: [], catalyst: '' },
+
+  // ---- M/W・復旧 → 時間のみ ----
+  'ﾄｯﾌﾟ M/W 開放': { fields: [], catalyst: '' },
+  'No.1 M/W 開放':  { fields: [], catalyst: '' },
+  'No.2 M/W 開放':  { fields: [], catalyst: '' },
+  'No.2 M/W復旧':   { fields: [], catalyst: '' },
+  'No.1 M/W復旧':   { fields: [], catalyst: '' },
+  'ﾄｯﾌﾟ M/W復旧':   { fields: [], catalyst: '' },
+  'TOP/E復旧':       { fields: [], catalyst: '' },
+  'BTM/E復旧':       { fields: [], catalyst: '' },
+  '6Fクエンチ復旧':   { fields: [], catalyst: '' },
+  '9Fクエンチ復旧':   { fields: [], catalyst: '' },
+};
