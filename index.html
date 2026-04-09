@@ -300,11 +300,9 @@
           </select>
         </div>
         <div class="form-group">
-          <label>作業時間</label>
-          <div class="time-row">
-            <input type="time" id="entry-start" class="form-input">
-            <span>～</span>
-            <input type="time" id="entry-end" class="form-input">
+          <label>作業時間 <button type="button" id="btn-add-time-slot" class="btn-add-slot">＋追加</button></label>
+          <div id="entry-time-slots">
+            <!-- 時間帯スロットがここに動的生成される -->
           </div>
         </div>
         <div class="form-group">

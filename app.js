@@ -175,6 +175,9 @@ const App = {
       document.getElementById('header-title').textContent = e.target.value;
     });
 
+    // Time slot add button
+    document.getElementById('btn-add-time-slot').addEventListener('click', () => this._addTimeSlot());
+
     // Voice buttons
     document.querySelectorAll('.btn-voice').forEach(btn => {
       btn.addEventListener('click', () => this.toggleVoice(btn.dataset.target, btn));
@@ -361,10 +364,13 @@ const App = {
     entries.forEach((entry, idx) => {
       const card = document.createElement('div');
       card.className = 'entry-card';
+      // 時間帯の表示（複数対応）
+      const times = this._getEntryTimes(entry);
+      const timesHtml = times.map(t => `<span>${t.start || '?'} ～ ${t.end || ''}</span>`).join('');
       card.innerHTML = `
         <div class="entry-header">
           <strong>${this.esc(entry.title || '作業')}</strong>
-          <span class="entry-time">${entry.start || ''} ～ ${entry.end || ''}</span>
+          <div class="entry-times">${timesHtml}</div>
         </div>
         <div class="entry-meta">
           ${entry.catalyst ? `<span class="entry-tag">${entry.catalyst}</span>` : ''}
@@ -395,8 +401,6 @@ const App = {
     // Reset
     document.getElementById('entry-title').value = '';
     document.getElementById('entry-catalyst').value = '';
-    document.getElementById('entry-start').value = '';
-    document.getElementById('entry-end').value = '';
     document.getElementById('entry-fc-count').value = '';
     document.getElementById('entry-fc-total').value = '';
     document.getElementById('entry-level').value = '';
@@ -408,13 +412,18 @@ const App = {
       if (e) {
         document.getElementById('entry-title').value = e.title || '';
         document.getElementById('entry-catalyst').value = e.catalyst || '';
-        document.getElementById('entry-start').value = e.start || '';
-        document.getElementById('entry-end').value = e.end || '';
         document.getElementById('entry-fc-count').value = e.fcCount || '';
         document.getElementById('entry-fc-total').value = e.fcTotal || '';
         document.getElementById('entry-level').value = e.level || '';
         document.getElementById('entry-note').value = e.note || '';
+        // 時間スロットを復元
+        const times = this._getEntryTimes(e);
+        this._renderTimeSlots(times);
+      } else {
+        this._renderTimeSlots([{ start: '', end: '' }]);
       }
+    } else {
+      this._renderTimeSlots([{ start: '', end: '' }]);
     }
 
     modal.classList.remove('hidden');
@@ -425,11 +434,18 @@ const App = {
   },
 
   saveEntry() {
+    // 時間スロットを収集
+    const times = [];
+    document.querySelectorAll('#entry-time-slots .time-row').forEach(row => {
+      const start = row.querySelector('.slot-start').value;
+      const end = row.querySelector('.slot-end').value;
+      if (start || end) times.push({ start, end });
+    });
+
     const entry = {
       title: document.getElementById('entry-title').value.trim(),
       catalyst: document.getElementById('entry-catalyst').value,
-      start: document.getElementById('entry-start').value,
-      end: document.getElementById('entry-end').value,
+      times: times.length > 0 ? times : [{ start: '', end: '' }],
       fcCount: document.getElementById('entry-fc-count').value,
       fcTotal: document.getElementById('entry-fc-total').value,
       level: document.getElementById('entry-level').value,
@@ -468,8 +484,7 @@ const App = {
     const entry = {
       title: itemName,
       catalyst: (defaults && defaults.catalyst) ? defaults.catalyst : '',
-      start: `${hh}:${mm}`,
-      end: '',
+      times: [{ start: `${hh}:${mm}`, end: '' }],
       fcCount: '',
       fcTotal: '',
       level: '',
@@ -678,128 +693,230 @@ const App = {
     });
   },
 
-  // ---- Print A4 (引継帳フォーマット) ----
+  // ---- Print A4 (引継帳フォーマット — 2020実績表と同一レイアウト) ----
+  // リアクター容器SVG
+  _reactorSVG() {
+    return `<svg viewBox="0 0 90 260" width="90" height="260" xmlns="http://www.w3.org/2000/svg">
+      <style>line,rect,circle,ellipse,path{stroke:#000;stroke-width:0.8;fill:none}</style>
+      <!-- 脚 -->
+      <path d="M20,250 L35,220 L55,220 L70,250"/>
+      <line x1="20" y1="250" x2="70" y2="250"/>
+      <path d="M30,235 L60,235"/>
+      <!-- 本体 -->
+      <rect x="25" y="50" width="40" height="170" rx="2"/>
+      <!-- ドーム -->
+      <path d="M25,50 Q25,20 45,15 Q65,20 65,50"/>
+      <!-- ノズルTOP -->
+      <rect x="40" y="8" width="10" height="10"/>
+      <!-- 内部BED点線 -->
+      <line x1="28" y1="90" x2="62" y2="90" stroke-dasharray="3,2"/>
+      <text x="45" y="75" text-anchor="middle" font-size="6" fill="#333" stroke="none">1st</text>
+      <line x1="28" y1="135" x2="62" y2="135" stroke-dasharray="3,2"/>
+      <text x="45" y="120" text-anchor="middle" font-size="6" fill="#333" stroke="none">2nd</text>
+      <line x1="28" y1="180" x2="62" y2="180" stroke-dasharray="3,2"/>
+      <text x="45" y="165" text-anchor="middle" font-size="6" fill="#333" stroke="none">3rd</text>
+      <!-- BTM -->
+      <path d="M25,220 Q25,230 45,235 Q65,230 65,220"/>
+      <!-- 配管 -->
+      <line x1="65" y1="80" x2="80" y2="80"/>
+      <line x1="65" y1="125" x2="80" y2="125"/>
+      <line x1="65" y1="170" x2="80" y2="170"/>
+    </svg>`;
+  },
+
   printA4() {
     this.collectSheet();
-    const d = this._currentData;
-    const shiftLabel = d.shift === 'day' ? '昼勤' : '夜勤';
-    const projName = Store.getSetting('projectName', '仙台RDSリアクター触媒交換工事');
+    const projName = Store.getSetting('projectName', '2026年仙台RDSリアクター触媒交換工事');
 
-    // Build work check items
-    let workCheckRows = '';
-    Object.entries(SENDAI_WORK_ITEMS).forEach(([catKey, items]) => {
-      items.forEach(item => {
-        const checked = d.workChecks?.[`${catKey}:${item}`] ? '■' : '□';
-        workCheckRows += `<tr><td class="chk">${checked}</td><td>${item}</td></tr>`;
-      });
-    });
+    // 昼勤・夜勤の両方のデータを取得
+    const dayData = Store.getSheet(this.currentDate, 'day') || this.createEmptySheet();
+    const nightData = Store.getSheet(this.currentDate, 'night') || this.createEmptySheet();
 
-    // Build reactor entries
-    const buildRxHtml = (rxName) => {
-      const rx = d.reactors?.[rxName] || { entries: [], notes: '' };
+    // 日付フォーマット
+    const dateObj = new Date(this.currentDate + 'T00:00:00');
+    const weekDays = ['日','月','火','水','木','金','土'];
+    const dateStr = `${dateObj.getMonth()+1}月　${dateObj.getDate()}日（${weekDays[dateObj.getDay()]}）`;
+
+    // 作業実績行を生成
+    const buildEntryLines = (shiftData, rxName) => {
+      const rx = shiftData?.reactors?.[rxName] || { entries: [], notes: '' };
+      const entries = rx.entries || [];
       let html = '';
-      rx.entries.forEach(e => {
-        html += `<tr>
-          <td>${e.title || ''}</td>
-          <td>${e.start || ''} ～ ${e.end || ''}</td>
-          <td>${e.fcCount || ''}${e.fcTotal ? '/' + e.fcTotal + ' FC' : ''}</td>
-          <td>${e.level ? 'Ⓛ' + e.level + 'mm' : ''}</td>
-          <td>${e.note || ''}</td>
-        </tr>`;
+      entries.forEach(e => {
+        const times = (e.times && e.times.length > 0) ? e.times : [{ start: e.start || '', end: e.end || '' }];
+        times.forEach((t, ti) => {
+          const label = ti === 0 ? (e.title || '') : '';
+          const timeStr = (t.start || '') + (t.start || t.end ? '～' : '') + (t.end || '');
+          const meta = [];
+          if (ti === 0 && e.catalyst) meta.push(e.catalyst);
+          if (ti === 0 && e.fcCount) meta.push(`${e.fcCount}/${e.fcTotal||'?'}FC`);
+          if (ti === 0 && e.level) meta.push(`Ⓛ${e.level}mm`);
+          html += `<div class="entry-line">`;
+          if (label) html += `<span class="el-check">□</span>`;
+          else html += `<span class="el-check"></span>`;
+          html += `<span class="el-text">${label}${timeStr ? ' '+timeStr : ''}${meta.length ? ' '+meta.join(' ') : ''}</span>`;
+          html += `</div>`;
+        });
+        if (e.note) {
+          html += `<div class="entry-line"><span class="el-check"></span><span class="el-text el-note">${this.esc(e.note)}</span></div>`;
+        }
       });
-      if (rx.entries.length === 0) html = '<tr><td colspan="5" style="text-align:center;color:#999">—</td></tr>';
+      // 引継ぎ事項
+      if (rx.notes) {
+        html += `<div class="entry-line" style="margin-top:4pt;border-top:1px solid #999;padding-top:2pt"><span class="el-check"></span><span class="el-text" style="font-weight:bold">【引継ぎ】${this.esc(rx.notes)}</span></div>`;
+      }
+      // 空行で最低行数を埋める（罫線として）
+      const minLines = 18;
+      const currentLines = entries.length + (rx.notes ? 2 : 0);
+      for (let i = currentLines; i < minLines; i++) {
+        html += `<div class="entry-line empty"></div>`;
+      }
       return html;
     };
 
-    // WBGT rows
-    const wb = d.wbgt || [{}, {}, {}];
-    let wbgtRows = '';
-    for (let i = 0; i < 3; i++) {
-      wbgtRows += `<tr><td>${i + 1}回目</td><td>${wb[i]?.temp || ''}</td><td>${wb[i]?.humidity || ''}</td><td>${wb[i]?.wbgt || ''}</td></tr>`;
-    }
+    // レベル円を生成
+    const buildLevelCircle = (shiftData, rxName) => {
+      const rx = shiftData?.reactors?.[rxName] || { entries: [] };
+      const entries = rx.entries || [];
+      // レベル値がある最後のエントリーを探す
+      let levelVal = '';
+      entries.forEach(e => { if (e.level) levelVal = e.level; });
+      return `<div class="level-circle">
+        <svg viewBox="0 0 80 80" width="70" height="70">
+          <circle cx="40" cy="40" r="38" stroke="#000" stroke-width="1" fill="none"/>
+          ${levelVal ? `<text x="40" y="44" text-anchor="middle" font-size="10" fill="#000" font-weight="bold">${levelVal}mm</text>` : ''}
+        </svg>
+      </div>`;
+    };
 
     const printHtml = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
-<title>${projName} ${d.date} ${shiftLabel}</title>
+<title>${projName} ${this.currentDate}</title>
 <style>
-  @page { size: A4 portrait; margin: 8mm; }
+  @page { size: A4 landscape; margin: 5mm; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: "MS Gothic","Noto Sans JP",sans-serif; font-size: 8pt; line-height: 1.3; }
-  h1 { font-size: 11pt; text-align: center; margin-bottom: 4pt; border-bottom: 2px solid #000; padding-bottom: 2pt; }
-  .meta { display: flex; justify-content: space-between; margin-bottom: 4pt; font-size: 8pt; }
-  .meta span { margin-right: 12pt; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 4pt; }
-  th, td { border: 1px solid #333; padding: 2pt 4pt; font-size: 7.5pt; vertical-align: top; }
-  th { background: #e8e8e8; font-weight: bold; text-align: center; }
-  .rx-title { background: #d0d0d0; font-weight: bold; font-size: 9pt; text-align: center; }
-  .section-title { background: #f0f0f0; font-weight: bold; font-size: 8pt; }
-  .chk { text-align: center; width: 20pt; }
-  .two-col { display: flex; gap: 4pt; }
-  .two-col > div { flex: 1; }
-  .notes-box { min-height: 30pt; white-space: pre-wrap; }
+  body { font-family: "MS Gothic","ＭＳ ゴシック","Noto Sans JP",monospace; font-size: 7.5pt; line-height: 1.3; }
+
+  .page { width: 100%; height: 100%; }
+  .header { text-align: center; margin-bottom: 2pt; }
+  .header h1 { font-size: 9pt; margin: 0; }
+  .header h2 { font-size: 11pt; margin: 0; font-weight: bold; }
+  .header .date-line { font-size: 9pt; margin: 2pt 0; }
+
+  .shift-bar { display: flex; border: 1.5pt solid #000; }
+  .shift-col { flex: 1; }
+  .shift-label { text-align: center; font-weight: bold; font-size: 9pt; padding: 2pt 0;
+    border-bottom: 1pt solid #000; }
+  .shift-label-day { background: #d0d0d0; }
+  .shift-label-night { background: #333; color: #fff; }
+  .shift-meta { display: flex; justify-content: space-between; padding: 1pt 4pt;
+    font-size: 7.5pt; border-bottom: 1pt solid #000; }
+  .shift-col + .shift-col { border-left: 1.5pt solid #000; }
+
+  .rx-row { display: flex; border-left: 1.5pt solid #000; border-right: 1.5pt solid #000;
+    border-bottom: 1.5pt solid #000; min-height: 42%; }
+  .rx-half { flex: 1; display: flex; padding: 2pt; }
+  .rx-half + .rx-half { border-left: 1.5pt solid #000; }
+
+  .rx-name { font-weight: bold; font-size: 9pt; writing-mode: vertical-rl;
+    text-orientation: mixed; padding: 2pt 1pt; border-right: 0.5pt solid #999;
+    display: flex; align-items: center; }
+  .rx-body { flex: 1; display: flex; }
+  .rx-illust { width: 95pt; display: flex; align-items: center; justify-content: center;
+    border-right: 0.5pt dotted #aaa; }
+  .rx-illust svg { width: 80pt; height: auto; }
+  .rx-records { flex: 1; display: flex; flex-direction: column; padding: 1pt 3pt; }
+  .rx-records-header { font-weight: bold; font-size: 8pt; text-align: center;
+    border-bottom: 0.5pt solid #000; margin-bottom: 2pt; padding-bottom: 1pt; }
+
+  .entry-line { display: flex; min-height: 11pt; border-bottom: 0.5pt dotted #ccc;
+    align-items: baseline; padding: 0.5pt 0; }
+  .entry-line.empty { }
+  .el-check { width: 10pt; font-size: 7pt; text-align: center; flex-shrink: 0; }
+  .el-text { flex: 1; font-size: 7pt; white-space: pre-wrap; word-break: break-all; }
+  .el-note { color: #555; font-size: 6.5pt; }
+
+  .level-circle { position: absolute; top: 2pt; right: 2pt; }
+  .rx-records { position: relative; }
 </style>
 </head><body>
-<h1>${projName}</h1>
-<div class="meta">
-  <span><b>＜${shiftLabel}＞</b></span>
-  <span>天候：${d.weather || '—'}</span>
-  <span>日付：${d.date || ''}</span>
-  <span>担当：${d.supervisor || ''}</span>
+<div class="page">
+  <div class="header">
+    <h1>ENEOS（株）仙台製油所</h1>
+    <h2>RDS－RX－01＆02A　触媒交換工事実績表</h2>
+    <div class="date-line">${dateStr}</div>
+  </div>
+
+  <div class="shift-bar">
+    <div class="shift-col">
+      <div class="shift-label shift-label-day">昼　勤</div>
+      <div class="shift-meta">
+        <span>天候（${dayData.weather || '　　'}）</span>
+        <span>気温（　　）</span>
+        <span>担当：${dayData.supervisor || ''}</span>
+      </div>
+    </div>
+    <div class="shift-col">
+      <div class="shift-label shift-label-night">夜　勤</div>
+      <div class="shift-meta">
+        <span>天候（${nightData.weather || '　　'}）</span>
+        <span>気温（　　）</span>
+        <span>担当：${nightData.supervisor || ''}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- RX-01A row -->
+  <div class="rx-row">
+    <div class="rx-half">
+      <div class="rx-name">RX-01A</div>
+      <div class="rx-body">
+        <div class="rx-illust">${this._reactorSVG()}</div>
+        <div class="rx-records">
+          <div class="rx-records-header">【作業実績】</div>
+          ${buildLevelCircle(dayData, 'RX-01A')}
+          ${buildEntryLines(dayData, 'RX-01A')}
+        </div>
+      </div>
+    </div>
+    <div class="rx-half">
+      <div class="rx-name">RX-01A</div>
+      <div class="rx-body">
+        <div class="rx-illust">${this._reactorSVG()}</div>
+        <div class="rx-records">
+          <div class="rx-records-header">【作業実績】</div>
+          ${buildLevelCircle(nightData, 'RX-01A')}
+          ${buildEntryLines(nightData, 'RX-01A')}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RX-02A row -->
+  <div class="rx-row">
+    <div class="rx-half">
+      <div class="rx-name">RX-02A</div>
+      <div class="rx-body">
+        <div class="rx-illust">${this._reactorSVG()}</div>
+        <div class="rx-records">
+          <div class="rx-records-header">【作業実績】</div>
+          ${buildLevelCircle(dayData, 'RX-02A')}
+          ${buildEntryLines(dayData, 'RX-02A')}
+        </div>
+      </div>
+    </div>
+    <div class="rx-half">
+      <div class="rx-name">RX-02A</div>
+      <div class="rx-body">
+        <div class="rx-illust">${this._reactorSVG()}</div>
+        <div class="rx-records">
+          <div class="rx-records-header">【作業実績】</div>
+          ${buildLevelCircle(nightData, 'RX-02A')}
+          ${buildEntryLines(nightData, 'RX-02A')}
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
-
-<div class="two-col">
-  <div>
-    <table>
-      <tr><th class="rx-title" colspan="5">RX-01A 実績</th></tr>
-      <tr><th>作業内容</th><th>時間</th><th>FC</th><th>レベル</th><th>備考</th></tr>
-      ${buildRxHtml('RX-01A')}
-    </table>
-  </div>
-  <div>
-    <table>
-      <tr><th class="rx-title" colspan="5">RX-02A 実績</th></tr>
-      <tr><th>作業内容</th><th>時間</th><th>FC</th><th>レベル</th><th>備考</th></tr>
-      ${buildRxHtml('RX-02A')}
-    </table>
-  </div>
-</div>
-
-<table>
-  <tr><th class="section-title" colspan="6">抜出/充填 実績</th></tr>
-  <tr>
-    <th>時間</th><td>${d.stats?.nukiStart || ''} ～ ${d.stats?.nukiEnd || ''}</td>
-    <th>FC</th><td>${d.stats?.nukiCount || ''}/${d.stats?.nukiTotal || ''} FC</td>
-    <th>Ⓛ</th><td>${d.stats?.level || ''} mm</td>
-  </tr>
-  <tr>
-    <th>作業時間</th><td>${d.stats?.workStart || ''} ～ ${d.stats?.workEnd || ''}</td>
-    <th>触媒温度</th><td>${d.stats?.catalystTemp || ''} ℃</td>
-    <th>ドライアイス</th><td>${d.stats?.dryIce || ''} kg</td>
-  </tr>
-</table>
-
-<table>
-  <tr><th class="section-title" colspan="4">客先立会い</th></tr>
-  <tr><th>設備検査</th><td>${d.inspection?.equipment || ''}</td><th>製油</th><td>${d.inspection?.seiyu || ''}</td></tr>
-  <tr><th>GM承認</th><td>${d.inspection?.gm || ''}</td><th>自衛防</th><td>${d.inspection?.jieiho || ''}</td></tr>
-</table>
-
-<div class="two-col">
-  <div>
-    <table>
-      <tr><th class="section-title" colspan="4">WBGT測定</th></tr>
-      <tr><th></th><th>温度</th><th>湿度</th><th>WBGT</th></tr>
-      ${wbgtRows}
-    </table>
-  </div>
-  <div>
-    <table>
-      <tr><th class="section-title" colspan="2">引継ぎ事項</th></tr>
-      <tr><th>RX-01A</th><td class="notes-box">${this.esc(d.reactors?.['RX-01A']?.notes || '')}</td></tr>
-      <tr><th>RX-02A</th><td class="notes-box">${this.esc(d.reactors?.['RX-02A']?.notes || '')}</td></tr>
-    </table>
-  </div>
-</div>
-
 </body></html>`;
 
     const w = window.open('', '_blank');
@@ -808,46 +925,78 @@ const App = {
     setTimeout(() => w.print(), 400);
   },
 
-  // ---- Export All PDF ----
+  // ---- Export All PDF (日付単位で printA4 と同一フォーマット) ----
   exportAllPDF() {
-    const dates = Store.getDates();
-    if (dates.length === 0) { this.showToast('データがありません'); return; }
+    const allKeys = Store.getDates();
+    if (allKeys.length === 0) { this.showToast('データがありません'); return; }
 
-    // Open all sheets in one print window
-    let allHtml = '';
-    dates.forEach(k => {
-      const data = Store.getSheet(k.substring(0, 10), k.substring(11));
-      if (data) {
-        this._currentData = data;
-        // We'll collect a simplified version
-        allHtml += `<div style="page-break-after:always;">`;
-        allHtml += `<h2>${data.date} ${data.shift === 'day' ? '昼勤' : '夜勤'}</h2>`;
-        allHtml += `<p>天候: ${data.weather || '—'} / 担当: ${data.supervisor || '—'}</p>`;
+    // 日付の一覧を重複排除で取得
+    const uniqueDates = [...new Set(allKeys.map(k => k.substring(0, 10)))].sort();
 
-        REACTORS.forEach(rx => {
-          const entries = data.reactors?.[rx]?.entries || [];
-          if (entries.length > 0) {
-            allHtml += `<h3>${rx}</h3><table border="1" cellpadding="3" style="border-collapse:collapse;width:100%;font-size:9pt;">`;
-            allHtml += '<tr><th>作業</th><th>時間</th><th>FC</th><th>備考</th></tr>';
-            entries.forEach(e => {
-              allHtml += `<tr><td>${e.title || ''}</td><td>${e.start || ''}～${e.end || ''}</td><td>${e.fcCount || ''}/${e.fcTotal || ''}</td><td>${e.note || ''}</td></tr>`;
-            });
-            allHtml += '</table>';
-          }
-          const notes = data.reactors?.[rx]?.notes;
-          if (notes) allHtml += `<p><b>引継ぎ:</b> ${this.esc(notes)}</p>`;
+    // 各日付ごとのページを生成するため、一時的に currentDate を切り替え
+    const savedDate = this.currentDate;
+    const savedShift = this.currentShift;
+
+    // printA4 と同じレイアウトを流用して全ページ生成
+    let pagesHtml = '';
+    uniqueDates.forEach((date, i) => {
+      this.currentDate = date;
+      // 各日付で昼夜両方のデータを取得
+      const dayData = Store.getSheet(date, 'day') || this.createEmptySheet();
+      const nightData = Store.getSheet(date, 'night') || this.createEmptySheet();
+      const dateObj = new Date(date + 'T00:00:00');
+      const weekDays = ['日','月','火','水','木','金','土'];
+      const dateStr = `${dateObj.getMonth()+1}月　${dateObj.getDate()}日（${weekDays[dateObj.getDay()]}）`;
+
+      const buildLines = (sd, rx) => {
+        const r = sd?.reactors?.[rx] || { entries: [], notes: '' };
+        let h = '';
+        (r.entries||[]).forEach(e => {
+          const times = (e.times && e.times.length > 0) ? e.times : [{ start: e.start||'', end: e.end||'' }];
+          times.forEach((t,ti) => {
+            const lb = ti===0 ? (e.title||'') : '';
+            const ts = (t.start||'') + (t.start||t.end ? '～' : '') + (t.end||'');
+            const m = [];
+            if (ti===0 && e.catalyst) m.push(e.catalyst);
+            if (ti===0 && e.fcCount) m.push(`${e.fcCount}/${e.fcTotal||'?'}FC`);
+            if (ti===0 && e.level) m.push(`Ⓛ${e.level}mm`);
+            h += `<div class="entry-line"><span class="el-check">${lb?'□':''}</span><span class="el-text">${lb}${ts?' '+ts:''}${m.length?' '+m.join(' '):''}</span></div>`;
+          });
         });
-        allHtml += '</div>';
-      }
+        if (r.notes) h += `<div class="entry-line" style="margin-top:4pt;border-top:1px solid #999;padding-top:2pt"><span class="el-check"></span><span class="el-text" style="font-weight:bold">【引継ぎ】${this.esc(r.notes)}</span></div>`;
+        const min = 18, cur = (r.entries||[]).length + (r.notes?2:0);
+        for (let j = cur; j < min; j++) h += '<div class="entry-line empty"></div>';
+        return h;
+      };
+
+      const pageBreak = i < uniqueDates.length - 1 ? 'page-break-after:always;' : '';
+      pagesHtml += `<div class="page" style="${pageBreak}">
+        <div class="header"><h1>ENEOS（株）仙台製油所</h1><h2>RDS－RX－01＆02A　触媒交換工事実績表</h2><div class="date-line">${dateStr}</div></div>
+        <div class="shift-bar"><div class="shift-col"><div class="shift-label shift-label-day">昼　勤</div><div class="shift-meta"><span>天候（${dayData.weather||'　'}）</span><span>担当：${dayData.supervisor||''}</span></div></div><div class="shift-col"><div class="shift-label shift-label-night">夜　勤</div><div class="shift-meta"><span>天候（${nightData.weather||'　'}）</span><span>担当：${nightData.supervisor||''}</span></div></div></div>
+        <div class="rx-row"><div class="rx-half"><div class="rx-name">RX-01A</div><div class="rx-body"><div class="rx-illust">${this._reactorSVG()}</div><div class="rx-records"><div class="rx-records-header">【作業実績】</div>${buildLines(dayData,'RX-01A')}</div></div></div><div class="rx-half"><div class="rx-name">RX-01A</div><div class="rx-body"><div class="rx-illust">${this._reactorSVG()}</div><div class="rx-records"><div class="rx-records-header">【作業実績】</div>${buildLines(nightData,'RX-01A')}</div></div></div></div>
+        <div class="rx-row"><div class="rx-half"><div class="rx-name">RX-02A</div><div class="rx-body"><div class="rx-illust">${this._reactorSVG()}</div><div class="rx-records"><div class="rx-records-header">【作業実績】</div>${buildLines(dayData,'RX-02A')}</div></div></div><div class="rx-half"><div class="rx-name">RX-02A</div><div class="rx-body"><div class="rx-illust">${this._reactorSVG()}</div><div class="rx-records"><div class="rx-records-header">【作業実績】</div>${buildLines(nightData,'RX-02A')}</div></div></div></div>
+      </div>`;
     });
 
-    // Restore current
-    this.loadSheet();
+    // 復元
+    this.currentDate = savedDate;
+    this.currentShift = savedShift;
 
     const w = window.open('', '_blank');
-    w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>全日分引継帳</title>
-    <style>@page{size:A4;margin:10mm}body{font-family:"MS Gothic","Noto Sans JP",sans-serif;font-size:9pt}h2{border-bottom:1px solid #000}table{margin:4pt 0}</style>
-    </head><body>${allHtml}</body></html>`);
+    w.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>全日分実績表</title>
+    <style>
+      @page { size: A4 landscape; margin: 5mm; }
+      * { margin:0;padding:0;box-sizing:border-box; }
+      body { font-family:"MS Gothic","ＭＳ ゴシック","Noto Sans JP",monospace; font-size:7.5pt; line-height:1.3; }
+      .page { width:100%; }
+      .header { text-align:center;margin-bottom:2pt; } .header h1 { font-size:9pt;margin:0; } .header h2 { font-size:11pt;margin:0;font-weight:bold; } .header .date-line { font-size:9pt;margin:2pt 0; }
+      .shift-bar { display:flex;border:1.5pt solid #000; } .shift-col { flex:1; } .shift-label { text-align:center;font-weight:bold;font-size:9pt;padding:2pt 0;border-bottom:1pt solid #000; } .shift-label-day { background:#d0d0d0; } .shift-label-night { background:#333;color:#fff; } .shift-meta { display:flex;justify-content:space-between;padding:1pt 4pt;font-size:7.5pt;border-bottom:1pt solid #000; } .shift-col + .shift-col { border-left:1.5pt solid #000; }
+      .rx-row { display:flex;border-left:1.5pt solid #000;border-right:1.5pt solid #000;border-bottom:1.5pt solid #000;min-height:42%; } .rx-half { flex:1;display:flex;padding:2pt; } .rx-half + .rx-half { border-left:1.5pt solid #000; }
+      .rx-name { font-weight:bold;font-size:9pt;writing-mode:vertical-rl;text-orientation:mixed;padding:2pt 1pt;border-right:0.5pt solid #999;display:flex;align-items:center; }
+      .rx-body { flex:1;display:flex; } .rx-illust { width:95pt;display:flex;align-items:center;justify-content:center;border-right:0.5pt dotted #aaa; } .rx-illust svg { width:80pt;height:auto; }
+      .rx-records { flex:1;display:flex;flex-direction:column;padding:1pt 3pt; } .rx-records-header { font-weight:bold;font-size:8pt;text-align:center;border-bottom:0.5pt solid #000;margin-bottom:2pt;padding-bottom:1pt; }
+      .entry-line { display:flex;min-height:11pt;border-bottom:0.5pt dotted #ccc;align-items:baseline;padding:0.5pt 0; } .el-check { width:10pt;font-size:7pt;text-align:center;flex-shrink:0; } .el-text { flex:1;font-size:7pt;white-space:pre-wrap;word-break:break-all; }
+    </style></head><body>${pagesHtml}</body></html>`);
     w.document.close();
     setTimeout(() => w.print(), 400);
   },
@@ -923,6 +1072,40 @@ const App = {
     document.getElementById('sync-status').style.color = online ? '#16a34a' : '#d97706';
     document.getElementById('sync-status').title = online ? 'オンライン' : 'オフライン';
   },
+  // ---- Time Slot helpers ----
+  // 旧形式(start/end)と新形式(times[])の両方に対応
+  _getEntryTimes(entry) {
+    if (entry.times && entry.times.length > 0) return entry.times;
+    // 旧形式からの変換
+    return [{ start: entry.start || '', end: entry.end || '' }];
+  },
+
+  _renderTimeSlots(times) {
+    const container = document.getElementById('entry-time-slots');
+    container.innerHTML = '';
+    times.forEach((t, i) => this._appendTimeSlotRow(container, t.start, t.end, i > 0));
+  },
+
+  _addTimeSlot() {
+    const container = document.getElementById('entry-time-slots');
+    this._appendTimeSlotRow(container, '', '', true);
+  },
+
+  _appendTimeSlotRow(container, startVal, endVal, removable) {
+    const row = document.createElement('div');
+    row.className = 'time-row';
+    row.innerHTML = `
+      <input type="time" class="form-input slot-start" value="${startVal}">
+      <span>～</span>
+      <input type="time" class="form-input slot-end" value="${endVal}">
+      ${removable ? '<button type="button" class="btn-remove-slot">✕</button>' : '<span style="width:28px"></span>'}
+    `;
+    if (removable) {
+      row.querySelector('.btn-remove-slot').addEventListener('click', () => row.remove());
+    }
+    container.appendChild(row);
+  },
+
   showToast(msg) {
     const t = document.getElementById('toast');
     t.textContent = msg;
