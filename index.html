@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#1a56db">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="引継帳">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <title>仙台RDS 引継帳</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- ===== Top Bar ===== -->
+  <header class="top-bar">
+    <button id="btn-menu" class="icon-btn" aria-label="メニュー">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <h1 class="app-title">仙台RDS 引継帳</h1>
+    <div class="top-bar-actions">
+      <span id="sync-status" class="sync-badge" title="同期状態">●</span>
+      <button id="btn-print" class="icon-btn" aria-label="印刷">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===== Offline Banner ===== -->
+  <div id="offline-banner" class="offline-banner hidden">
+    オフライン — データはローカル保存、復帰後に自動同期
+  </div>
+
+  <!-- ===== Date & Shift Selector ===== -->
+  <div class="shift-bar">
+    <input type="date" id="date-select" class="date-input">
+    <div class="shift-toggle">
+      <button class="shift-btn active" data-shift="day">昼勤</button>
+      <button class="shift-btn" data-shift="night">夜勤</button>
+    </div>
+  </div>
+
+  <!-- ===== Main Content (scrollable) ===== -->
+  <main class="main-content">
+
+    <!-- Header Info -->
+    <section class="card header-card">
+      <div class="header-title" id="header-title">2026年仙台RDSリアクター触媒交換工事</div>
+      <div class="header-row">
+        <label>天候</label>
+        <select id="weather">
+          <option value="">--</option>
+          <option value="晴れ">晴れ</option>
+          <option value="曇り">曇り</option>
+          <option value="雨">雨</option>
+          <option value="雪">雪</option>
+          <option value="強風">強風</option>
+        </select>
+        <label>担当</label>
+        <select id="supervisor">
+          <option value="">--</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- ===== Reactor Panels (横スクロール on mobile) ===== -->
+    <section class="reactor-section">
+      <div class="reactor-tabs">
+        <button class="reactor-tab active" data-rx="RX-01A">RX-01A</button>
+        <button class="reactor-tab" data-rx="RX-02A">RX-02A</button>
+      </div>
+
+      <div id="reactor-panel" class="reactor-panel">
+        <!-- 実績入力リスト -->
+        <div class="record-entries" id="record-entries">
+          <!-- JS で動的生成 -->
+        </div>
+        <button id="btn-add-entry" class="btn-add-entry">＋ 実績を追加</button>
+      </div>
+    </section>
+
+    <!-- ===== 作業項目チェックリスト ===== -->
+    <section class="card">
+      <h2 class="section-heading">作業項目</h2>
+      <div id="work-items-panel" class="work-items-panel">
+        <!-- JS でカテゴリごとに生成 -->
+      </div>
+    </section>
+
+    <!-- ===== 抜出/充填 実績 ===== -->
+    <section class="card">
+      <h2 class="section-heading">抜出/充填 実績</h2>
+      <div class="stats-grid">
+        <div class="stat-item">
+          <label>抜出/充填</label>
+          <div class="stat-row">
+            <input type="time" id="stat-nuki-start"> ～ <input type="time" id="stat-nuki-end">
+            <input type="number" id="stat-nuki-count" class="narrow-input" placeholder="0"> /
+            <input type="number" id="stat-nuki-total" class="narrow-input" placeholder="0"> FC
+          </div>
+          <div class="stat-row">
+            <span>Ⓛ</span>
+            <input type="number" id="stat-level" class="narrow-input" placeholder="0"> mm
+          </div>
+        </div>
+        <div class="stat-item">
+          <label>作業時間</label>
+          <div class="stat-row">
+            <input type="time" id="stat-work-start"> ～ <input type="time" id="stat-work-end">
+          </div>
+        </div>
+        <div class="stat-item">
+          <label>触媒温度</label>
+          <div class="stat-row">
+            <input type="number" id="stat-temp" class="narrow-input" placeholder="--"> ℃
+          </div>
+        </div>
+        <div class="stat-item">
+          <label>ドライアイス使用</label>
+          <div class="stat-row">
+            <input type="number" id="stat-dryice" class="narrow-input" placeholder="0"> kg
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 客先立会い ===== -->
+    <section class="card">
+      <h2 class="section-heading">客先立会い</h2>
+      <div class="inspection-grid">
+        <div class="insp-row">
+          <label>設備検査</label>
+          <input type="text" id="insp-equipment" class="form-input" placeholder="立会者名">
+        </div>
+        <div class="insp-row">
+          <label>製油</label>
+          <input type="text" id="insp-seiyu" class="form-input" placeholder="立会者名">
+        </div>
+        <div class="insp-row">
+          <label>GM承認</label>
+          <input type="text" id="insp-gm" class="form-input" placeholder="承認者名">
+        </div>
+        <div class="insp-row">
+          <label>自衛防</label>
+          <input type="text" id="insp-jieiho" class="form-input" placeholder="発令時刻等">
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== WBGT測定 ===== -->
+    <section class="card">
+      <h2 class="section-heading">WBGT測定</h2>
+      <div class="wbgt-grid">
+        <div class="wbgt-header">
+          <span></span><span>温度</span><span>湿度</span><span>WBGT</span>
+        </div>
+        <div class="wbgt-row">
+          <span>1回目</span>
+          <input type="number" id="wbgt-t1" class="narrow-input" step="0.1">
+          <input type="number" id="wbgt-h1" class="narrow-input" step="0.1">
+          <input type="number" id="wbgt-w1" class="narrow-input" step="0.1">
+        </div>
+        <div class="wbgt-row">
+          <span>2回目</span>
+          <input type="number" id="wbgt-t2" class="narrow-input" step="0.1">
+          <input type="number" id="wbgt-h2" class="narrow-input" step="0.1">
+          <input type="number" id="wbgt-w2" class="narrow-input" step="0.1">
+        </div>
+        <div class="wbgt-row">
+          <span>3回目</span>
+          <input type="number" id="wbgt-t3" class="narrow-input" step="0.1">
+          <input type="number" id="wbgt-h3" class="narrow-input" step="0.1">
+          <input type="number" id="wbgt-w3" class="narrow-input" step="0.1">
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 引継ぎ事項 ===== -->
+    <section class="card">
+      <h2 class="section-heading">引継ぎ事項</h2>
+      <div class="handover-notes">
+        <div class="textarea-with-voice">
+          <textarea id="handover-notes-rx1" class="form-textarea" rows="3" placeholder="RX-01A 引継ぎ事項"></textarea>
+          <button class="btn-voice" data-target="handover-notes-rx1" aria-label="音声入力">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          </button>
+        </div>
+        <div class="textarea-with-voice">
+          <textarea id="handover-notes-rx2" class="form-textarea" rows="3" placeholder="RX-02A 引継ぎ事項"></textarea>
+          <button class="btn-voice" data-target="handover-notes-rx2" aria-label="音声入力">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bottom padding for scroll -->
+    <div style="height:80px"></div>
+  </main>
+
+  <!-- ===== Bottom Action Bar ===== -->
+  <nav class="bottom-bar">
+    <button id="btn-save" class="btn-save">保存</button>
+  </nav>
+
+  <!-- ===== Side Menu ===== -->
+  <div id="side-menu" class="side-menu hidden">
+    <div class="side-menu-overlay"></div>
+    <div class="side-menu-panel">
+      <div class="side-menu-header">
+        <h2>設定</h2>
+        <button id="btn-menu-close" class="icon-btn">✕</button>
+      </div>
+      <div class="side-menu-body">
+        <div class="menu-section">
+          <h3>工事情報</h3>
+          <div class="menu-item">
+            <label>工事名</label>
+            <input type="text" id="setting-project-name" class="form-input" value="2026年仙台RDSリアクター触媒交換工事">
+          </div>
+        </div>
+        <div class="menu-section">
+          <h3>担当者管理</h3>
+          <div id="staff-list" class="staff-list"></div>
+          <div class="staff-add-row">
+            <input type="text" id="staff-new" class="form-input" placeholder="担当者名を入力">
+            <button id="btn-add-staff" class="btn-primary-sm">追加</button>
+          </div>
+        </div>
+        <div class="menu-section">
+          <h3>表示</h3>
+          <div class="menu-item">
+            <span>ダークモード</span>
+            <label class="toggle">
+              <input type="checkbox" id="toggle-dark">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="menu-section">
+          <h3>Firebase同期</h3>
+          <div class="menu-item">
+            <label>API Key</label>
+            <input type="text" id="fb-apiKey" class="form-input" placeholder="AIza...">
+          </div>
+          <div class="menu-item">
+            <label>Project ID</label>
+            <input type="text" id="fb-projectId" class="form-input" placeholder="my-project-id">
+          </div>
+          <div class="menu-item">
+            <button id="btn-fb-save" class="btn-primary-sm">Firebase設定を保存</button>
+            <button id="btn-fb-upload" class="btn-secondary" style="margin-left:4px">全データ↑送信</button>
+          </div>
+          <p style="font-size:0.7rem;color:var(--text-hint);margin-top:4px">
+            未設定でもローカル保存で使えます。設定するとリアルタイム同期が有効になります。
+          </p>
+        </div>
+        <div class="menu-section">
+          <h3>データ</h3>
+          <div class="menu-item">
+            <button id="btn-export" class="btn-secondary">JSONバックアップ</button>
+          </div>
+          <div class="menu-item">
+            <button id="btn-import" class="btn-secondary">JSONインポート</button>
+            <input type="file" id="import-file" accept=".json" class="hidden">
+          </div>
+          <div class="menu-item">
+            <button id="btn-export-all-pdf" class="btn-secondary">全日分PDF生成</button>
+          </div>
+        </div>
+        <div class="menu-section">
+          <h3>日付一覧</h3>
+          <div id="date-list" class="date-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Toast ===== -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- ===== 実績入力モーダル ===== -->
+  <div id="modal-entry" class="modal hidden">
+    <div class="modal-content modal-sm">
+      <div class="modal-header">
+        <button id="btn-entry-close" class="icon-btn">✕</button>
+        <h2>実績入力</h2>
+        <button id="btn-entry-save" class="btn-primary">保存</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>作業内容</label>
+          <input type="text" id="entry-title" class="form-input" placeholder="例：3rd BED JE充填">
+        </div>
+        <div class="form-group">
+          <label>触媒名</label>
+          <select id="entry-catalyst" class="form-input">
+            <option value="">--</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>作業時間</label>
+          <div class="time-row">
+            <input type="time" id="entry-start" class="form-input">
+            <span>～</span>
+            <input type="time" id="entry-end" class="form-input">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>FC数</label>
+          <div class="stat-row">
+            <input type="number" id="entry-fc-count" class="narrow-input" placeholder="0"> /
+            <input type="number" id="entry-fc-total" class="narrow-input" placeholder="0"> FC
+          </div>
+        </div>
+        <div class="form-group">
+          <label>レベル Ⓛ</label>
+          <div class="stat-row">
+            <input type="number" id="entry-level" class="narrow-input" placeholder="0"> mm
+          </div>
+        </div>
+        <div class="form-group">
+          <label>備考</label>
+          <div class="textarea-with-voice">
+            <textarea id="entry-note" class="form-textarea" rows="2" placeholder="補足メモ"></textarea>
+            <button class="btn-voice" data-target="entry-note" aria-label="音声入力">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase SDK (CDN) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+  <script src="sendai-data.js"></script>
+  <script src="firebase-sync.js"></script>
+  <script src="voice.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
