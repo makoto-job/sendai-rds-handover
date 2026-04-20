@@ -1,0 +1,24 @@
+# ========================================
+# 機密情報（絶対にコミットしない）
+# ========================================
+firebase-config.local.js
+*.local.js
+.env
+.env.*
+!.env.example
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+
+# macOS
+.DS_Store
+
+# エディタ
+.vscode/
+.idea/
+*.swp
+
+# Node
+node_modules/

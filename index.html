@@ -7,12 +7,42 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="引継帳">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://www.google.com https://www.googleapis.com https://apis.google.com https://*.firebaseapp.com; style-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com; connect-src 'self' https://*.googleapis.com https://*.google.com https://*.firebaseio.com https://*.firebaseapp.com https://*.cloudfunctions.net wss://*.firebaseio.com; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; frame-src https://www.google.com https://*.firebaseapp.com https://*.googleapis.com;">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <title>仙台RDS 引継帳</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- ===== Login Screen ===== -->
+  <div id="login-screen" class="login-screen">
+    <div class="login-card">
+      <h1 class="login-title">仙台RDS 引継帳</h1>
+      <p class="login-subtitle">ログイン</p>
+
+      <!-- ログインフォーム -->
+      <div id="login-step-main" class="login-step">
+        <label class="login-label">パスコード</label>
+        <input type="password" id="login-passcode" class="login-input"
+          placeholder="パスコードを入力" inputmode="numeric" maxlength="10">
+        <p class="login-hint">管理者から共有されたパスコード</p>
+
+        <label class="login-label" style="margin-top:16px">あなたの名前</label>
+        <input type="text" id="login-name" class="login-input"
+          placeholder="例: 佐藤">
+        <p class="login-hint">他の作業員に表示されます</p>
+
+        <button id="btn-login" class="login-btn" style="margin-top:16px">ログイン</button>
+      </div>
+
+      <!-- エラー表示 -->
+      <div id="login-error" class="login-error hidden"></div>
+
+      <!-- 処理中 -->
+      <div id="login-loading" class="login-loading hidden">処理中...</div>
+    </div>
+  </div>
+
   <!-- ===== Top Bar ===== -->
   <header class="top-bar">
     <button id="btn-menu" class="icon-btn" aria-label="メニュー">
@@ -239,22 +269,14 @@
           </div>
         </div>
         <div class="menu-section">
-          <h3>Firebase同期</h3>
+          <h3>アカウント</h3>
           <div class="menu-item">
-            <label>API Key</label>
-            <input type="text" id="fb-apiKey" class="form-input" placeholder="AIza...">
+            <span id="account-info" style="font-size:0.8rem;color:var(--text-sub)">未ログイン</span>
           </div>
           <div class="menu-item">
-            <label>Project ID</label>
-            <input type="text" id="fb-projectId" class="form-input" placeholder="my-project-id">
+            <button id="btn-signout" class="btn-secondary">ログアウト</button>
+            <button id="btn-fb-upload" class="btn-secondary" style="margin-left:4px">全データ送信</button>
           </div>
-          <div class="menu-item">
-            <button id="btn-fb-save" class="btn-primary-sm">Firebase設定を保存</button>
-            <button id="btn-fb-upload" class="btn-secondary" style="margin-left:4px">全データ↑送信</button>
-          </div>
-          <p style="font-size:0.7rem;color:var(--text-hint);margin-top:4px">
-            未設定でもローカル保存で使えます。設定するとリアルタイム同期が有効になります。
-          </p>
         </div>
         <div class="menu-section">
           <h3>データ</h3>
@@ -333,9 +355,14 @@
 
   <!-- Firebase SDK (CDN) -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 
+  <!-- Firebase 設定（git管理外） -->
+  <script src="firebase-config.local.js"></script>
+
   <script src="sendai-data.js"></script>
+  <script src="auth.js"></script>
   <script src="firebase-sync.js"></script>
   <script src="voice.js"></script>
   <script src="app.js"></script>

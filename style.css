@@ -348,6 +348,99 @@ body {
 }
 .toast.show { opacity: 1; }
 
+/* ---- Login Screen ---- */
+.login-screen {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #1a56db 0%, #1e40af 100%);
+  padding: 20px;
+}
+.login-screen.hidden { display: none; }
+.login-card {
+  background: #fff; border-radius: 16px;
+  padding: 32px 24px; width: 100%; max-width: 380px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+}
+.login-title {
+  font-size: 1.4rem; font-weight: 700; color: #1a56db;
+  text-align: center; margin-bottom: 4px;
+}
+.login-subtitle {
+  font-size: 0.85rem; color: #666;
+  text-align: center; margin-bottom: 24px;
+}
+.login-step { display: block; }
+.login-step.hidden { display: none; }
+.login-label {
+  display: block; font-size: 0.85rem; font-weight: 600;
+  color: #333; margin-bottom: 6px;
+}
+.login-input {
+  width: 100%; padding: 14px;
+  border: 2px solid #e0e0e0; border-radius: 10px;
+  background: #f9f9f9; color: #1a1a1a;
+  font-size: 1.1rem; font-family: inherit;
+  letter-spacing: 0.05em;
+}
+.login-input:focus {
+  outline: none; border-color: #1a56db;
+  background: #fff;
+}
+.login-hint {
+  font-size: 0.75rem; color: #888;
+  margin: 4px 0 16px;
+}
+.login-btn {
+  width: 100%; padding: 14px;
+  border: none; border-radius: 10px;
+  background: #1a56db; color: #fff;
+  font-size: 1rem; font-weight: 700;
+  cursor: pointer;
+  min-height: 48px;
+}
+.login-btn:active { opacity: 0.85; }
+.login-btn:disabled { background: #aaa; cursor: not-allowed; }
+.login-btn-link {
+  display: block; width: 100%;
+  margin-top: 10px;
+  border: none; background: transparent;
+  color: #1a56db; font-size: 0.85rem;
+  cursor: pointer; padding: 8px;
+}
+.login-error {
+  margin-top: 12px; padding: 10px;
+  background: #fee; color: #c00;
+  border-radius: 8px; font-size: 0.85rem;
+  border: 1px solid #fcc;
+}
+.login-error.hidden { display: none; }
+.login-warning {
+  padding: 12px; background: #fef3c7;
+  color: #92400e; border-radius: 8px;
+  font-size: 0.9rem; font-weight: 600;
+  margin-bottom: 12px;
+}
+.login-uid {
+  display: block; padding: 10px;
+  background: #f3f4f6; color: #1f2937;
+  border-radius: 6px; font-family: monospace;
+  font-size: 0.8rem; word-break: break-all;
+  margin-bottom: 16px;
+}
+.login-loading {
+  text-align: center; margin-top: 12px;
+  font-size: 0.85rem; color: #666;
+}
+.login-loading.hidden { display: none; }
+
+/* ログイン中はアプリ本体を完全に非表示 */
+body.not-authed .top-bar,
+body.not-authed .shift-bar,
+body.not-authed .main-content,
+body.not-authed .bottom-bar,
+body.not-authed .side-menu,
+body.not-authed .modal { display: none !important; }
+
 /* ---- Print (not used, A4 is in printA4 function) ---- */
 @media print {
   body { display: none; }

@@ -1,0 +1,48 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /projects/{projectId} {
+
+      // --- メンバー名簿 ---
+      // ★一時的: 初回の管理者登録を許可（登録完了後に戻す）
+      match /members/{memberId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null
+          && memberId == request.auth.uid
+          && !exists(/databases/$(database)/documents/projects/$(projectId)/members/$(memberId));
+        allow update, delete: if request.auth != null
+          && isMember(projectId, request.auth.uid)
+          && getMemberRole(projectId, request.auth.uid) == 'admin';
+      }
+
+      // --- 引継帳シート ---
+      match /sheets/{sheetId} {
+        allow read: if request.auth != null
+          && isMember(projectId, request.auth.uid);
+        allow create, update: if request.auth != null
+          && isMember(projectId, request.auth.uid)
+          && request.resource.data.updatedBy == request.auth.uid;
+        allow delete: if request.auth != null
+          && isMember(projectId, request.auth.uid)
+          && getMemberRole(projectId, request.auth.uid) == 'admin';
+      }
+
+      // --- 監査ログ ---
+      match /audit/{logId} {
+        allow create: if request.auth != null
+          && isMember(projectId, request.auth.uid);
+        allow read: if request.auth != null
+          && isMember(projectId, request.auth.uid);
+        allow update, delete: if false;
+      }
+    }
+
+    function isMember(projectId, uid) {
+      return exists(/databases/$(database)/documents/projects/$(projectId)/members/$(uid));
+    }
+    function getMemberRole(projectId, uid) {
+      return get(/databases/$(database)/documents/projects/$(projectId)/members/$(uid)).data.role;
+    }
+  }
+}

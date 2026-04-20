@@ -72,6 +72,48 @@ const App = {
   _editingEntryIdx: -1,
 
   init() {
+    // 起動時はログイン前提（アプリ本体を隠す）
+    document.body.classList.add('not-authed');
+
+    // ログイン画面のイベント
+    this.bindLoginEvents();
+
+    // 認証初期化
+    Auth.init((user, member) => this.onAuthChange(user, member));
+  },
+
+  // ---- 認証 ----
+  bindLoginEvents() {
+    document.getElementById('btn-login').addEventListener('click', () => this.doLogin());
+    document.getElementById('login-passcode').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('login-name').focus();
+    });
+    document.getElementById('login-name').addEventListener('keydown', e => {
+      if (e.key === 'Enter') this.doLogin();
+    });
+  },
+
+  async onAuthChange(user, member) {
+    const loginScreen = document.getElementById('login-screen');
+
+    if (!user || !member) {
+      // 未ログイン or メンバー未登録 → ログイン画面
+      document.body.classList.add('not-authed');
+      loginScreen.classList.remove('hidden');
+      return;
+    }
+
+    // ログイン＆メンバー確認OK → アプリ起動
+    document.body.classList.remove('not-authed');
+    loginScreen.classList.add('hidden');
+
+    if (!this._appStarted) {
+      this._appStarted = true;
+      await this._startApp();
+    }
+  },
+
+  async _startApp() {
     // Theme
     if (Store.getSetting('darkMode', false)) {
       document.documentElement.setAttribute('data-theme', 'dark');
@@ -80,15 +122,32 @@ const App = {
 
     document.getElementById('date-select').value = this.currentDate;
     this.bindEvents();
+
+    // ログインユーザーを担当者リストに自動追加
+    const myName = Auth.getMemberName();
+    if (myName && myName !== '不明') {
+      const staff = Store.getStaff();
+      if (!staff.includes(myName)) {
+        staff.push(myName);
+        Store.saveStaff(staff);
+      }
+    }
+
     this.renderStaffSelect();
+
+    // 担当者をログインユーザーで自動選択（未選択の場合のみ）
+    const supervisorEl = document.getElementById('supervisor');
+    if (!supervisorEl.value && myName) {
+      supervisorEl.value = myName;
+    }
+
     this.renderWorkItems();
     this.renderCatalystOptions();
     this.loadSheet();
     this.checkOnline();
 
-    // Firebase初期化（設定済みの場合のみ）
+    // Firestore同期を初期化（認証済み前提）
     FireSync.init((date, shift, remoteData) => {
-      // リモートからの更新を受信したら画面を更新
       if (date === this.currentDate && shift === this.currentShift) {
         this._currentData = remoteData;
         this.loadSheet();
@@ -96,10 +155,57 @@ const App = {
       }
     }).then(ok => {
       if (ok) {
-        this.showToast('Firebase接続OK');
+        this.showToast('接続OK');
         FireSync.listenSheet(this.currentDate, this.currentShift);
       }
     });
+  },
+
+  async doLogin() {
+    const passcode = document.getElementById('login-passcode').value.trim();
+    const name = document.getElementById('login-name').value.trim();
+
+    if (!passcode) { this._showLoginError('パスコードを入力してください'); return; }
+    if (!name) { this._showLoginError('名前を入力してください'); return; }
+    if (!Auth.checkPasscode(passcode)) { this._showLoginError('パスコードが違います'); return; }
+
+    this._showLoginLoading(true);
+    this._clearLoginError();
+
+    try {
+      // 匿名ログイン
+      await Auth.signInAnonymously();
+
+      // 最初の登録者は管理者、2人目以降は作業者
+      const db = firebase.firestore();
+      const membersSnap = await db.collection('projects').doc(HIKI_PROJECT_ID)
+        .collection('members').limit(1).get();
+      const role = membersSnap.empty ? 'admin' : 'worker';
+
+      // メンバー登録
+      await Auth.registerMember(name, role);
+
+      // 画面更新（onAuthChange が呼ばれる）
+      this.onAuthChange(Auth.getUser(), Auth.getMember());
+    } catch (e) {
+      this._showLoginError('ログインエラー: ' + e.message);
+    } finally {
+      this._showLoginLoading(false);
+    }
+  },
+
+  _showLoginError(msg) {
+    const el = document.getElementById('login-error');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+  },
+
+  _clearLoginError() {
+    document.getElementById('login-error').classList.add('hidden');
+  },
+
+  _showLoginLoading(show) {
+    document.getElementById('login-loading').classList.toggle('hidden', !show);
   },
 
   // ---- Events ----
@@ -164,10 +270,10 @@ const App = {
     document.getElementById('import-file').addEventListener('change', e => this.importJSON(e));
     document.getElementById('btn-export-all-pdf').addEventListener('click', () => this.exportAllPDF());
 
-    // Firebase settings
-    document.getElementById('btn-fb-save').addEventListener('click', () => this.saveFirebaseConfig());
+    // Account
+    document.getElementById('btn-signout').addEventListener('click', () => this.signOut());
     document.getElementById('btn-fb-upload').addEventListener('click', () => this.uploadToFirebase());
-    this.loadFirebaseConfigUI();
+    this._updateAccountInfo();
 
     // Project name
     document.getElementById('setting-project-name').addEventListener('change', e => {
@@ -1030,35 +1136,35 @@ const App = {
     e.target.value = '';
   },
 
-  // ---- Firebase Config ----
-  loadFirebaseConfigUI() {
-    const config = FireSync.getConfig();
-    if (config) {
-      document.getElementById('fb-apiKey').value = config.apiKey || '';
-      document.getElementById('fb-projectId').value = config.projectId || '';
+  // ---- Account ----
+  _updateAccountInfo() {
+    const el = document.getElementById('account-info');
+    if (!el) return;
+    if (Auth.isSignedIn()) {
+      const name = Auth.getMemberName();
+      const phone = Auth.getPhone();
+      const role = Auth.isAdmin() ? '管理者' : '作業者';
+      el.textContent = `${name}（${role}）${phone}`;
+    } else {
+      el.textContent = '未ログイン';
     }
   },
 
-  saveFirebaseConfig() {
-    const apiKey = document.getElementById('fb-apiKey').value.trim();
-    const projectId = document.getElementById('fb-projectId').value.trim();
-    if (!apiKey || !projectId) {
-      this.showToast('API KeyとProject IDを入力してください');
-      return;
-    }
-    FireSync.saveConfig({ apiKey, authDomain: projectId + '.firebaseapp.com', projectId });
-    localStorage.setItem('firebase_project_id', projectId);
-    this.showToast('Firebase設定を保存しました。リロードで反映されます。');
+  async signOut() {
+    if (!confirm('ログアウトしますか？')) return;
+    await Auth.signOut();
+    // onAuthChange が呼ばれてログイン画面に戻る
+    location.reload();
   },
 
   async uploadToFirebase() {
     if (!FireSync.isEnabled()) {
-      this.showToast('Firebase未接続です。設定を確認してください');
+      this.showToast('未接続です');
       return;
     }
     try {
       const count = await FireSync.uploadAll();
-      this.showToast(`${count}件のデータをFirebaseに送信しました`);
+      this.showToast(`${count}件のデータを送信しました`);
     } catch (e) {
       this.showToast('送信エラー: ' + e.message);
     }
