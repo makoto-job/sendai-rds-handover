@@ -799,230 +799,241 @@ const App = {
     });
   },
 
-  // ---- Print A4 (引継帳フォーマット — 2020実績表と同一レイアウト) ----
-  // リアクター容器SVG
+  // ---- Print A4 (引継帳フォーマット — Excel原紙準拠) ----
   _reactorSVG() {
     return `<svg viewBox="0 0 90 260" width="90" height="260" xmlns="http://www.w3.org/2000/svg">
       <style>line,rect,circle,ellipse,path{stroke:#000;stroke-width:0.8;fill:none}</style>
-      <!-- 脚 -->
-      <path d="M20,250 L35,220 L55,220 L70,250"/>
-      <line x1="20" y1="250" x2="70" y2="250"/>
-      <path d="M30,235 L60,235"/>
-      <!-- 本体 -->
-      <rect x="25" y="50" width="40" height="170" rx="2"/>
-      <!-- ドーム -->
-      <path d="M25,50 Q25,20 45,15 Q65,20 65,50"/>
-      <!-- ノズルTOP -->
-      <rect x="40" y="8" width="10" height="10"/>
-      <!-- 内部BED点線 -->
-      <line x1="28" y1="90" x2="62" y2="90" stroke-dasharray="3,2"/>
-      <text x="45" y="75" text-anchor="middle" font-size="6" fill="#333" stroke="none">1st</text>
-      <line x1="28" y1="135" x2="62" y2="135" stroke-dasharray="3,2"/>
-      <text x="45" y="120" text-anchor="middle" font-size="6" fill="#333" stroke="none">2nd</text>
-      <line x1="28" y1="180" x2="62" y2="180" stroke-dasharray="3,2"/>
-      <text x="45" y="165" text-anchor="middle" font-size="6" fill="#333" stroke="none">3rd</text>
-      <!-- BTM -->
+      <path d="M20,250 L35,220 L55,220 L70,250"/><line x1="20" y1="250" x2="70" y2="250"/><path d="M30,235 L60,235"/>
+      <rect x="25" y="50" width="40" height="170" rx="2"/><path d="M25,50 Q25,20 45,15 Q65,20 65,50"/><rect x="40" y="8" width="10" height="10"/>
+      <line x1="28" y1="90" x2="62" y2="90" stroke-dasharray="3,2"/><text x="45" y="75" text-anchor="middle" font-size="6" fill="#333" stroke="none">1st</text>
+      <line x1="28" y1="135" x2="62" y2="135" stroke-dasharray="3,2"/><text x="45" y="120" text-anchor="middle" font-size="6" fill="#333" stroke="none">2nd</text>
+      <line x1="28" y1="180" x2="62" y2="180" stroke-dasharray="3,2"/><text x="45" y="165" text-anchor="middle" font-size="6" fill="#333" stroke="none">3rd</text>
       <path d="M25,220 Q25,230 45,235 Q65,230 65,220"/>
-      <!-- 配管 -->
-      <line x1="65" y1="80" x2="80" y2="80"/>
-      <line x1="65" y1="125" x2="80" y2="125"/>
-      <line x1="65" y1="170" x2="80" y2="170"/>
+      <line x1="65" y1="80" x2="80" y2="80"/><line x1="65" y1="125" x2="80" y2="125"/><line x1="65" y1="170" x2="80" y2="170"/>
     </svg>`;
   },
 
-  printA4() {
-    this.collectSheet();
-    const projName = Store.getSetting('projectName', '2026年仙台RDSリアクター触媒交換工事');
+  _printCSS() {
+    return `
+  @page { size: A4 landscape; margin: 5mm; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:"MS Gothic","ＭＳ ゴシック","Noto Sans JP",monospace; font-size:7pt; line-height:1.3; }
 
-    // 昼勤・夜勤の両方のデータを取得
-    const dayData = Store.getSheet(this.currentDate, 'day') || this.createEmptySheet();
-    const nightData = Store.getSheet(this.currentDate, 'night') || this.createEmptySheet();
+  .page { width:100%; }
+  .header { text-align:center; margin-bottom:2pt; }
+  .header h1 { font-size:9pt; margin:0; }
+  .header h2 { font-size:11pt; margin:0; font-weight:bold; }
+  .header .date-line { font-size:9pt; margin:2pt 0; }
 
-    // 日付フォーマット
-    const dateObj = new Date(this.currentDate + 'T00:00:00');
+  /* メインレイアウト: 左(実績) + 右(管理データ+チェック) */
+  .main-layout { display:flex; border:1.5pt solid #000; }
+  .left-area { flex:3; display:flex; flex-direction:column; }
+  .right-area { flex:1; border-left:1.5pt solid #000; display:flex; flex-direction:column; min-width:200pt; }
+
+  /* シフトバー */
+  .shift-bar { display:flex; border-bottom:1pt solid #000; }
+  .shift-col { flex:1; }
+  .shift-label { text-align:center; font-weight:bold; font-size:8pt; padding:1pt 0; border-bottom:0.5pt solid #000; }
+  .shift-label-day { background:#d0d0d0; }
+  .shift-label-night { background:#333; color:#fff; }
+  .shift-meta { padding:1pt 3pt; font-size:6.5pt; border-bottom:0.5pt solid #000; }
+  .shift-meta-row { display:flex; justify-content:space-between; }
+  .shift-col + .shift-col { border-left:1.5pt solid #000; }
+  .shift-members { padding:1pt 3pt; font-size:6pt; color:#333; }
+
+  /* リアクター行 */
+  .rx-row { display:flex; flex:1; border-bottom:1pt solid #000; }
+  .rx-row:last-child { border-bottom:none; }
+  .rx-half { flex:1; display:flex; padding:1pt; }
+  .rx-half + .rx-half { border-left:1.5pt solid #000; }
+  .rx-name { font-weight:bold; font-size:8pt; writing-mode:vertical-rl; text-orientation:mixed;
+    padding:1pt; border-right:0.5pt solid #999; display:flex; align-items:center; }
+  .rx-body { flex:1; display:flex; }
+  .rx-illust { width:70pt; display:flex; align-items:center; justify-content:center; border-right:0.5pt dotted #aaa; }
+  .rx-illust svg { width:60pt; height:auto; }
+  .rx-records { flex:1; display:flex; flex-direction:column; padding:1pt 2pt; position:relative; }
+  .rx-records-header { font-weight:bold; font-size:7pt; text-align:center;
+    border-bottom:0.5pt solid #000; margin-bottom:1pt; padding-bottom:1pt; }
+
+  .entry-line { display:flex; min-height:9pt; border-bottom:0.5pt dotted #ccc; align-items:baseline; padding:0.3pt 0; }
+  .el-check { width:8pt; font-size:6pt; text-align:center; flex-shrink:0; }
+  .el-text { flex:1; font-size:6.5pt; white-space:pre-wrap; word-break:break-all; }
+  .el-note { color:#555; font-size:6pt; }
+
+  .level-circle { position:absolute; top:1pt; right:1pt; }
+
+  /* 右側: 管理データ */
+  .mgmt-section { border-bottom:1pt solid #000; padding:2pt 3pt; }
+  .mgmt-section:last-child { border-bottom:none; }
+  .mgmt-title { font-weight:bold; font-size:7pt; background:#eee; padding:1pt 3pt; margin:-2pt -3pt 2pt -3pt; border-bottom:0.5pt solid #000; }
+  .mgmt-row { display:flex; font-size:6.5pt; padding:1pt 0; border-bottom:0.5pt dotted #ddd; }
+  .mgmt-label { width:55pt; font-weight:bold; flex-shrink:0; }
+  .mgmt-value { flex:1; }
+  .mgmt-row-2col { display:flex; gap:4pt; }
+  .mgmt-col { flex:1; }
+  .mgmt-col-label { font-size:6pt; color:#666; }
+  .mgmt-col-value { font-size:7pt; font-weight:bold; }
+
+  /* 右側: チェック表 */
+  .check-section { flex:1; overflow:hidden; }
+  .check-title { font-weight:bold; font-size:7pt; background:#eee; padding:1pt 3pt; border-bottom:0.5pt solid #000; }
+  .check-table { width:100%; border-collapse:collapse; font-size:5.5pt; }
+  .check-table th { background:#f0f0f0; border:0.5pt solid #999; padding:1pt 2pt; font-weight:bold; text-align:center; white-space:nowrap; }
+  .check-table td { border:0.5pt solid #ccc; padding:0.5pt 2pt; }
+  .check-table td.checked { text-align:center; color:#16a34a; font-weight:bold; }
+
+  /* 右側: 触媒名 */
+  .catalyst-list { font-size:5.5pt; padding:1pt 3pt; }
+  .catalyst-list-title { font-weight:bold; font-size:6pt; margin-bottom:1pt; }
+  .catalyst-item { padding:0.3pt 0; border-bottom:0.5pt dotted #eee; }`;
+  },
+
+  _buildEntryLines(shiftData, rxName) {
+    const rx = shiftData?.reactors?.[rxName] || { entries: [], notes: '' };
+    const entries = rx.entries || [];
+    let html = '';
+    entries.forEach(e => {
+      const times = (e.times && e.times.length > 0) ? e.times : [{ start: e.start || '', end: e.end || '' }];
+      times.forEach((t, ti) => {
+        const label = ti === 0 ? (e.title || '') : '';
+        const timeStr = (t.start || '') + (t.start || t.end ? '～' : '') + (t.end || '');
+        const meta = [];
+        if (ti === 0 && e.catalyst) meta.push(e.catalyst);
+        if (ti === 0 && e.fcCount) meta.push(`${e.fcCount}/${e.fcTotal||'?'}FC`);
+        if (ti === 0 && e.level) meta.push(`Ⓛ${e.level}mm`);
+        html += `<div class="entry-line"><span class="el-check">${label?'□':''}</span><span class="el-text">${label}${timeStr?' '+timeStr:''}${meta.length?' '+meta.join(' '):''}</span></div>`;
+      });
+      if (e.note) html += `<div class="entry-line"><span class="el-check"></span><span class="el-text el-note">${this.esc(e.note)}</span></div>`;
+    });
+    if (rx.notes) html += `<div class="entry-line" style="margin-top:2pt;border-top:1px solid #999;padding-top:1pt"><span class="el-check"></span><span class="el-text" style="font-weight:bold">【引継ぎ】${this.esc(rx.notes)}</span></div>`;
+    const minLines = 14, currentLines = entries.length + (rx.notes ? 2 : 0);
+    for (let i = currentLines; i < minLines; i++) html += '<div class="entry-line empty"></div>';
+    return html;
+  },
+
+  _buildLevelCircle(shiftData, rxName) {
+    const entries = shiftData?.reactors?.[rxName]?.entries || [];
+    let levelVal = '';
+    entries.forEach(e => { if (e.level) levelVal = e.level; });
+    return `<div class="level-circle"><svg viewBox="0 0 60 60" width="50" height="50"><circle cx="30" cy="30" r="28" stroke="#000" stroke-width="1" fill="none"/>${levelVal ? `<text x="30" y="34" text-anchor="middle" font-size="9" fill="#000" font-weight="bold">${levelVal}mm</text>` : ''}</svg></div>`;
+  },
+
+  _buildStatsSection(shiftData) {
+    const s = shiftData?.stats || {};
+    const insp = shiftData?.inspection || {};
+    return `
+      <div class="mgmt-row"><span class="mgmt-label">抜出/充填</span><span class="mgmt-value">${s.nukiStart||''}${s.nukiStart?'～':''}${s.nukiEnd||''} ${s.nukiCount||''}${s.nukiCount?'/':''}${s.nukiTotal||''}${s.nukiCount?' FC':''}</span></div>
+      <div class="mgmt-row"><span class="mgmt-label">Ⓛ レベル</span><span class="mgmt-value">${s.level ? s.level+' mm' : ''}</span></div>
+      <div class="mgmt-row"><span class="mgmt-label">作業時間</span><span class="mgmt-value">${s.workStart||''}${s.workStart?'～':''}${s.workEnd||''}</span></div>
+      <div class="mgmt-row"><span class="mgmt-label">触媒温度</span><span class="mgmt-value">${s.catalystTemp ? s.catalystTemp+' ℃' : ''}</span></div>
+      <div class="mgmt-row"><span class="mgmt-label">ﾄﾞﾗｲｱｲｽ</span><span class="mgmt-value">${s.dryIce ? s.dryIce+' kg' : ''}</span></div>
+      <div class="mgmt-row"><span class="mgmt-label">設備検査</span><span class="mgmt-value">${insp.equipment||''} 殿立会い</span></div>
+      <div class="mgmt-row"><span class="mgmt-label">製油</span><span class="mgmt-value">${insp.seiyu||''} 殿立会い</span></div>
+      <div class="mgmt-row"><span class="mgmt-label">GM承認</span><span class="mgmt-value">${insp.gm||''}</span></div>
+      <div class="mgmt-row"><span class="mgmt-label">自衛防</span><span class="mgmt-value">${insp.jieiho||''}</span></div>`;
+  },
+
+  _buildCheckTable(dayData, nightData) {
+    const cats = Object.entries(SENDAI_WORK_ITEMS);
+    const dayChecks = dayData?.workChecks || {};
+    const nightChecks = nightData?.workChecks || {};
+    let html = '<table class="check-table"><thead><tr><th>工程</th><th>作業項目</th><th>昼</th><th>夜</th></tr></thead><tbody>';
+    cats.forEach(([catKey, items]) => {
+      const catLabel = WORK_CATEGORY_LABELS[catKey];
+      items.slice(0, 8).forEach((item, i) => {
+        const dayKey = `${catKey}:${item}`;
+        html += `<tr>${i===0?`<td rowspan="${Math.min(items.length,8)}" style="font-weight:bold;text-align:center;writing-mode:vertical-rl;font-size:5pt">${catLabel}</td>`:''}`;
+        html += `<td>${item}</td>`;
+        html += `<td class="${dayChecks[dayKey]?'checked':''}">${dayChecks[dayKey]?'✓':''}</td>`;
+        html += `<td class="${nightChecks[dayKey]?'checked':''}">${nightChecks[dayKey]?'✓':''}</td></tr>`;
+      });
+    });
+    html += '</tbody></table>';
+    return html;
+  },
+
+  _buildCatalystList() {
+    return CATALYST_NAMES.map(n => `<div class="catalyst-item">${n}</div>`).join('');
+  },
+
+  _buildPageHtml(date, dayData, nightData, projName) {
+    const dateObj = new Date(date + 'T00:00:00');
     const weekDays = ['日','月','火','水','木','金','土'];
     const dateStr = `${dateObj.getMonth()+1}月　${dateObj.getDate()}日（${weekDays[dateObj.getDay()]}）`;
+    const staff = Store.getStaff();
+    const halfStaff = Math.ceil(staff.length / 2);
+    const dayStaff = staff.slice(0, halfStaff).join('　');
+    const nightStaff = staff.slice(halfStaff).join('　');
 
-    // 作業実績行を生成
-    const buildEntryLines = (shiftData, rxName) => {
-      const rx = shiftData?.reactors?.[rxName] || { entries: [], notes: '' };
-      const entries = rx.entries || [];
-      let html = '';
-      entries.forEach(e => {
-        const times = (e.times && e.times.length > 0) ? e.times : [{ start: e.start || '', end: e.end || '' }];
-        times.forEach((t, ti) => {
-          const label = ti === 0 ? (e.title || '') : '';
-          const timeStr = (t.start || '') + (t.start || t.end ? '～' : '') + (t.end || '');
-          const meta = [];
-          if (ti === 0 && e.catalyst) meta.push(e.catalyst);
-          if (ti === 0 && e.fcCount) meta.push(`${e.fcCount}/${e.fcTotal||'?'}FC`);
-          if (ti === 0 && e.level) meta.push(`Ⓛ${e.level}mm`);
-          html += `<div class="entry-line">`;
-          if (label) html += `<span class="el-check">□</span>`;
-          else html += `<span class="el-check"></span>`;
-          html += `<span class="el-text">${label}${timeStr ? ' '+timeStr : ''}${meta.length ? ' '+meta.join(' ') : ''}</span>`;
-          html += `</div>`;
-        });
-        if (e.note) {
-          html += `<div class="entry-line"><span class="el-check"></span><span class="el-text el-note">${this.esc(e.note)}</span></div>`;
-        }
-      });
-      // 引継ぎ事項
-      if (rx.notes) {
-        html += `<div class="entry-line" style="margin-top:4pt;border-top:1px solid #999;padding-top:2pt"><span class="el-check"></span><span class="el-text" style="font-weight:bold">【引継ぎ】${this.esc(rx.notes)}</span></div>`;
-      }
-      // 空行で最低行数を埋める（罫線として）
-      const minLines = 18;
-      const currentLines = entries.length + (rx.notes ? 2 : 0);
-      for (let i = currentLines; i < minLines; i++) {
-        html += `<div class="entry-line empty"></div>`;
-      }
-      return html;
-    };
-
-    // レベル円を生成
-    const buildLevelCircle = (shiftData, rxName) => {
-      const rx = shiftData?.reactors?.[rxName] || { entries: [] };
-      const entries = rx.entries || [];
-      // レベル値がある最後のエントリーを探す
-      let levelVal = '';
-      entries.forEach(e => { if (e.level) levelVal = e.level; });
-      return `<div class="level-circle">
-        <svg viewBox="0 0 80 80" width="70" height="70">
-          <circle cx="40" cy="40" r="38" stroke="#000" stroke-width="1" fill="none"/>
-          ${levelVal ? `<text x="40" y="44" text-anchor="middle" font-size="10" fill="#000" font-weight="bold">${levelVal}mm</text>` : ''}
-        </svg>
-      </div>`;
-    };
-
-    const printHtml = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
-<title>${projName} ${this.currentDate}</title>
-<style>
-  @page { size: A4 landscape; margin: 5mm; }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: "MS Gothic","ＭＳ ゴシック","Noto Sans JP",monospace; font-size: 7.5pt; line-height: 1.3; }
-
-  .page { width: 100%; height: 100%; }
-  .header { text-align: center; margin-bottom: 2pt; }
-  .header h1 { font-size: 9pt; margin: 0; }
-  .header h2 { font-size: 11pt; margin: 0; font-weight: bold; }
-  .header .date-line { font-size: 9pt; margin: 2pt 0; }
-
-  .shift-bar { display: flex; border: 1.5pt solid #000; }
-  .shift-col { flex: 1; }
-  .shift-label { text-align: center; font-weight: bold; font-size: 9pt; padding: 2pt 0;
-    border-bottom: 1pt solid #000; }
-  .shift-label-day { background: #d0d0d0; }
-  .shift-label-night { background: #333; color: #fff; }
-  .shift-meta { display: flex; justify-content: space-between; padding: 1pt 4pt;
-    font-size: 7.5pt; border-bottom: 1pt solid #000; }
-  .shift-col + .shift-col { border-left: 1.5pt solid #000; }
-
-  .rx-row { display: flex; border-left: 1.5pt solid #000; border-right: 1.5pt solid #000;
-    border-bottom: 1.5pt solid #000; min-height: 42%; }
-  .rx-half { flex: 1; display: flex; padding: 2pt; }
-  .rx-half + .rx-half { border-left: 1.5pt solid #000; }
-
-  .rx-name { font-weight: bold; font-size: 9pt; writing-mode: vertical-rl;
-    text-orientation: mixed; padding: 2pt 1pt; border-right: 0.5pt solid #999;
-    display: flex; align-items: center; }
-  .rx-body { flex: 1; display: flex; }
-  .rx-illust { width: 95pt; display: flex; align-items: center; justify-content: center;
-    border-right: 0.5pt dotted #aaa; }
-  .rx-illust svg { width: 80pt; height: auto; }
-  .rx-records { flex: 1; display: flex; flex-direction: column; padding: 1pt 3pt; }
-  .rx-records-header { font-weight: bold; font-size: 8pt; text-align: center;
-    border-bottom: 0.5pt solid #000; margin-bottom: 2pt; padding-bottom: 1pt; }
-
-  .entry-line { display: flex; min-height: 11pt; border-bottom: 0.5pt dotted #ccc;
-    align-items: baseline; padding: 0.5pt 0; }
-  .entry-line.empty { }
-  .el-check { width: 10pt; font-size: 7pt; text-align: center; flex-shrink: 0; }
-  .el-text { flex: 1; font-size: 7pt; white-space: pre-wrap; word-break: break-all; }
-  .el-note { color: #555; font-size: 6.5pt; }
-
-  .level-circle { position: absolute; top: 2pt; right: 2pt; }
-  .rx-records { position: relative; }
-</style>
-</head><body>
-<div class="page">
+    return `
   <div class="header">
     <h1>ENEOS（株）仙台製油所</h1>
     <h2>RDS－RX－01＆02A　触媒交換工事実績表</h2>
     <div class="date-line">${dateStr}</div>
   </div>
+  <div class="main-layout">
+    <!-- 左側: 実績エリア -->
+    <div class="left-area">
+      <div class="shift-bar">
+        <div class="shift-col">
+          <div class="shift-label shift-label-day">昼　勤</div>
+          <div class="shift-meta">
+            <div class="shift-meta-row"><span>天候（${dayData.weather||'　　'}）</span><span>担当：${dayData.supervisor||''}</span></div>
+          </div>
+          <div class="shift-members">${dayStaff}</div>
+        </div>
+        <div class="shift-col">
+          <div class="shift-label shift-label-night">夜　勤</div>
+          <div class="shift-meta">
+            <div class="shift-meta-row"><span>天候（${nightData.weather||'　　'}）</span><span>担当：${nightData.supervisor||''}</span></div>
+          </div>
+          <div class="shift-members">${nightStaff}</div>
+        </div>
+      </div>
+      <div class="rx-row">
+        <div class="rx-half"><div class="rx-name">RX-01A</div><div class="rx-body"><div class="rx-illust">${this._reactorSVG()}</div><div class="rx-records"><div class="rx-records-header">【作業実績】</div>${this._buildLevelCircle(dayData,'RX-01A')}${this._buildEntryLines(dayData,'RX-01A')}</div></div></div>
+        <div class="rx-half"><div class="rx-name">RX-01A</div><div class="rx-body"><div class="rx-illust">${this._reactorSVG()}</div><div class="rx-records"><div class="rx-records-header">【作業実績】</div>${this._buildLevelCircle(nightData,'RX-01A')}${this._buildEntryLines(nightData,'RX-01A')}</div></div></div>
+      </div>
+      <div class="rx-row">
+        <div class="rx-half"><div class="rx-name">RX-02A</div><div class="rx-body"><div class="rx-illust">${this._reactorSVG()}</div><div class="rx-records"><div class="rx-records-header">【作業実績】</div>${this._buildLevelCircle(dayData,'RX-02A')}${this._buildEntryLines(dayData,'RX-02A')}</div></div></div>
+        <div class="rx-half"><div class="rx-name">RX-02A</div><div class="rx-body"><div class="rx-illust">${this._reactorSVG()}</div><div class="rx-records"><div class="rx-records-header">【作業実績】</div>${this._buildLevelCircle(nightData,'RX-02A')}${this._buildEntryLines(nightData,'RX-02A')}</div></div></div>
+      </div>
+    </div>
+    <!-- 右側: 管理データ + チェック表 -->
+    <div class="right-area">
+      <div class="mgmt-section">
+        <div class="mgmt-title">昼勤 管理データ</div>
+        ${this._buildStatsSection(dayData)}
+      </div>
+      <div class="mgmt-section">
+        <div class="mgmt-title">夜勤 管理データ</div>
+        ${this._buildStatsSection(nightData)}
+      </div>
+      <div class="check-section">
+        <div class="check-title">作業工程チェック</div>
+        ${this._buildCheckTable(dayData, nightData)}
+      </div>
+      <div class="mgmt-section">
+        <div class="catalyst-list">
+          <div class="catalyst-list-title">触媒名一覧</div>
+          ${this._buildCatalystList()}
+        </div>
+      </div>
+    </div>
+  </div>`;
+  },
 
-  <div class="shift-bar">
-    <div class="shift-col">
-      <div class="shift-label shift-label-day">昼　勤</div>
-      <div class="shift-meta">
-        <span>天候（${dayData.weather || '　　'}）</span>
-        <span>気温（　　）</span>
-        <span>担当：${dayData.supervisor || ''}</span>
-      </div>
-    </div>
-    <div class="shift-col">
-      <div class="shift-label shift-label-night">夜　勤</div>
-      <div class="shift-meta">
-        <span>天候（${nightData.weather || '　　'}）</span>
-        <span>気温（　　）</span>
-        <span>担当：${nightData.supervisor || ''}</span>
-      </div>
-    </div>
-  </div>
+  printA4() {
+    this.collectSheet();
+    const projName = Store.getSetting('projectName', '2026年仙台RDSリアクター触媒交換工事');
+    const dayData = Store.getSheet(this.currentDate, 'day') || this.createEmptySheet();
+    const nightData = Store.getSheet(this.currentDate, 'night') || this.createEmptySheet();
 
-  <!-- RX-01A row -->
-  <div class="rx-row">
-    <div class="rx-half">
-      <div class="rx-name">RX-01A</div>
-      <div class="rx-body">
-        <div class="rx-illust">${this._reactorSVG()}</div>
-        <div class="rx-records">
-          <div class="rx-records-header">【作業実績】</div>
-          ${buildLevelCircle(dayData, 'RX-01A')}
-          ${buildEntryLines(dayData, 'RX-01A')}
-        </div>
-      </div>
-    </div>
-    <div class="rx-half">
-      <div class="rx-name">RX-01A</div>
-      <div class="rx-body">
-        <div class="rx-illust">${this._reactorSVG()}</div>
-        <div class="rx-records">
-          <div class="rx-records-header">【作業実績】</div>
-          ${buildLevelCircle(nightData, 'RX-01A')}
-          ${buildEntryLines(nightData, 'RX-01A')}
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- RX-02A row -->
-  <div class="rx-row">
-    <div class="rx-half">
-      <div class="rx-name">RX-02A</div>
-      <div class="rx-body">
-        <div class="rx-illust">${this._reactorSVG()}</div>
-        <div class="rx-records">
-          <div class="rx-records-header">【作業実績】</div>
-          ${buildLevelCircle(dayData, 'RX-02A')}
-          ${buildEntryLines(dayData, 'RX-02A')}
-        </div>
-      </div>
-    </div>
-    <div class="rx-half">
-      <div class="rx-name">RX-02A</div>
-      <div class="rx-body">
-        <div class="rx-illust">${this._reactorSVG()}</div>
-        <div class="rx-records">
-          <div class="rx-records-header">【作業実績】</div>
-          ${buildLevelCircle(nightData, 'RX-02A')}
-          ${buildEntryLines(nightData, 'RX-02A')}
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+    const printHtml = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<title>${projName} ${this.currentDate}</title>
+<style>${this._printCSS()}</style>
+</head><body>
+<div class="page">${this._buildPageHtml(this.currentDate, dayData, nightData, projName)}</div>
 </body></html>`;
 
     const w = window.open('', '_blank');
@@ -1031,78 +1042,29 @@ const App = {
     setTimeout(() => w.print(), 400);
   },
 
-  // ---- Export All PDF (日付単位で printA4 と同一フォーマット) ----
   exportAllPDF() {
     const allKeys = Store.getDates();
     if (allKeys.length === 0) { this.showToast('データがありません'); return; }
-
-    // 日付の一覧を重複排除で取得
     const uniqueDates = [...new Set(allKeys.map(k => k.substring(0, 10)))].sort();
-
-    // 各日付ごとのページを生成するため、一時的に currentDate を切り替え
     const savedDate = this.currentDate;
     const savedShift = this.currentShift;
+    const projName = Store.getSetting('projectName', '2026年仙台RDSリアクター触媒交換工事');
 
-    // printA4 と同じレイアウトを流用して全ページ生成
     let pagesHtml = '';
     uniqueDates.forEach((date, i) => {
       this.currentDate = date;
-      // 各日付で昼夜両方のデータを取得
       const dayData = Store.getSheet(date, 'day') || this.createEmptySheet();
       const nightData = Store.getSheet(date, 'night') || this.createEmptySheet();
-      const dateObj = new Date(date + 'T00:00:00');
-      const weekDays = ['日','月','火','水','木','金','土'];
-      const dateStr = `${dateObj.getMonth()+1}月　${dateObj.getDate()}日（${weekDays[dateObj.getDay()]}）`;
-
-      const buildLines = (sd, rx) => {
-        const r = sd?.reactors?.[rx] || { entries: [], notes: '' };
-        let h = '';
-        (r.entries||[]).forEach(e => {
-          const times = (e.times && e.times.length > 0) ? e.times : [{ start: e.start||'', end: e.end||'' }];
-          times.forEach((t,ti) => {
-            const lb = ti===0 ? (e.title||'') : '';
-            const ts = (t.start||'') + (t.start||t.end ? '～' : '') + (t.end||'');
-            const m = [];
-            if (ti===0 && e.catalyst) m.push(e.catalyst);
-            if (ti===0 && e.fcCount) m.push(`${e.fcCount}/${e.fcTotal||'?'}FC`);
-            if (ti===0 && e.level) m.push(`Ⓛ${e.level}mm`);
-            h += `<div class="entry-line"><span class="el-check">${lb?'□':''}</span><span class="el-text">${lb}${ts?' '+ts:''}${m.length?' '+m.join(' '):''}</span></div>`;
-          });
-        });
-        if (r.notes) h += `<div class="entry-line" style="margin-top:4pt;border-top:1px solid #999;padding-top:2pt"><span class="el-check"></span><span class="el-text" style="font-weight:bold">【引継ぎ】${this.esc(r.notes)}</span></div>`;
-        const min = 18, cur = (r.entries||[]).length + (r.notes?2:0);
-        for (let j = cur; j < min; j++) h += '<div class="entry-line empty"></div>';
-        return h;
-      };
-
       const pageBreak = i < uniqueDates.length - 1 ? 'page-break-after:always;' : '';
-      pagesHtml += `<div class="page" style="${pageBreak}">
-        <div class="header"><h1>ENEOS（株）仙台製油所</h1><h2>RDS－RX－01＆02A　触媒交換工事実績表</h2><div class="date-line">${dateStr}</div></div>
-        <div class="shift-bar"><div class="shift-col"><div class="shift-label shift-label-day">昼　勤</div><div class="shift-meta"><span>天候（${dayData.weather||'　'}）</span><span>担当：${dayData.supervisor||''}</span></div></div><div class="shift-col"><div class="shift-label shift-label-night">夜　勤</div><div class="shift-meta"><span>天候（${nightData.weather||'　'}）</span><span>担当：${nightData.supervisor||''}</span></div></div></div>
-        <div class="rx-row"><div class="rx-half"><div class="rx-name">RX-01A</div><div class="rx-body"><div class="rx-illust">${this._reactorSVG()}</div><div class="rx-records"><div class="rx-records-header">【作業実績】</div>${buildLines(dayData,'RX-01A')}</div></div></div><div class="rx-half"><div class="rx-name">RX-01A</div><div class="rx-body"><div class="rx-illust">${this._reactorSVG()}</div><div class="rx-records"><div class="rx-records-header">【作業実績】</div>${buildLines(nightData,'RX-01A')}</div></div></div></div>
-        <div class="rx-row"><div class="rx-half"><div class="rx-name">RX-02A</div><div class="rx-body"><div class="rx-illust">${this._reactorSVG()}</div><div class="rx-records"><div class="rx-records-header">【作業実績】</div>${buildLines(dayData,'RX-02A')}</div></div></div><div class="rx-half"><div class="rx-name">RX-02A</div><div class="rx-body"><div class="rx-illust">${this._reactorSVG()}</div><div class="rx-records"><div class="rx-records-header">【作業実績】</div>${buildLines(nightData,'RX-02A')}</div></div></div></div>
-      </div>`;
+      pagesHtml += `<div class="page" style="${pageBreak}">${this._buildPageHtml(date, dayData, nightData, projName)}</div>`;
     });
 
-    // 復元
     this.currentDate = savedDate;
     this.currentShift = savedShift;
 
     const w = window.open('', '_blank');
     w.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>全日分実績表</title>
-    <style>
-      @page { size: A4 landscape; margin: 5mm; }
-      * { margin:0;padding:0;box-sizing:border-box; }
-      body { font-family:"MS Gothic","ＭＳ ゴシック","Noto Sans JP",monospace; font-size:7.5pt; line-height:1.3; }
-      .page { width:100%; }
-      .header { text-align:center;margin-bottom:2pt; } .header h1 { font-size:9pt;margin:0; } .header h2 { font-size:11pt;margin:0;font-weight:bold; } .header .date-line { font-size:9pt;margin:2pt 0; }
-      .shift-bar { display:flex;border:1.5pt solid #000; } .shift-col { flex:1; } .shift-label { text-align:center;font-weight:bold;font-size:9pt;padding:2pt 0;border-bottom:1pt solid #000; } .shift-label-day { background:#d0d0d0; } .shift-label-night { background:#333;color:#fff; } .shift-meta { display:flex;justify-content:space-between;padding:1pt 4pt;font-size:7.5pt;border-bottom:1pt solid #000; } .shift-col + .shift-col { border-left:1.5pt solid #000; }
-      .rx-row { display:flex;border-left:1.5pt solid #000;border-right:1.5pt solid #000;border-bottom:1.5pt solid #000;min-height:42%; } .rx-half { flex:1;display:flex;padding:2pt; } .rx-half + .rx-half { border-left:1.5pt solid #000; }
-      .rx-name { font-weight:bold;font-size:9pt;writing-mode:vertical-rl;text-orientation:mixed;padding:2pt 1pt;border-right:0.5pt solid #999;display:flex;align-items:center; }
-      .rx-body { flex:1;display:flex; } .rx-illust { width:95pt;display:flex;align-items:center;justify-content:center;border-right:0.5pt dotted #aaa; } .rx-illust svg { width:80pt;height:auto; }
-      .rx-records { flex:1;display:flex;flex-direction:column;padding:1pt 3pt; } .rx-records-header { font-weight:bold;font-size:8pt;text-align:center;border-bottom:0.5pt solid #000;margin-bottom:2pt;padding-bottom:1pt; }
-      .entry-line { display:flex;min-height:11pt;border-bottom:0.5pt dotted #ccc;align-items:baseline;padding:0.5pt 0; } .el-check { width:10pt;font-size:7pt;text-align:center;flex-shrink:0; } .el-text { flex:1;font-size:7pt;white-space:pre-wrap;word-break:break-all; }
-    </style></head><body>${pagesHtml}</body></html>`);
+    <style>${this._printCSS()}</style></head><body>${pagesHtml}</body></html>`);
     w.document.close();
     setTimeout(() => w.print(), 400);
   },
