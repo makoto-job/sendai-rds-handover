@@ -3,7 +3,7 @@
    Cache-first for app shell
    ======================================== */
 
-const CACHE_NAME = 'vha-cache-v3';
+const CACHE_NAME = 'vha-cache-v5';
 const APP_SHELL = [
   './',
   './index.html',

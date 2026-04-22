@@ -113,9 +113,14 @@ const FireSync = {
   // リアルタイムリスナー
   listenSheet(date, shift) {
     if (!this.isEnabled()) return;
+    const key = `${date}_${shift}`;
+    if (this._currentListenKey === key) return;
+    this._currentListenKey = key;
     this.stopListeners();
 
+    let isFirst = true;
     const unsub = this._docRef(date, shift).onSnapshot(doc => {
+      if (isFirst) { isFirst = false; return; }
       if (doc.exists && doc.metadata.hasPendingWrites === false) {
         console.log(`[FireSync] リモート更新受信: ${date}_${shift}`);
         if (this._onUpdate) {
@@ -145,6 +150,7 @@ const FireSync = {
   stopListeners() {
     this._listeners.forEach(fn => fn());
     this._listeners = [];
+    this._currentListenKey = null;
   },
 
   // 全データ一括アップロード

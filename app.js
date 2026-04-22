@@ -148,11 +148,8 @@ const App = {
 
     // Firestore同期を初期化（認証済み前提）
     FireSync.init((date, shift, remoteData) => {
-      if (date === this.currentDate && shift === this.currentShift) {
-        this._currentData = remoteData;
-        this.loadSheet();
-        this.showToast('他の端末から更新されました');
-      }
+      // リモート更新は手動リロードで反映（ループ防止）
+      console.log('[FireSync] リモート更新検知（自動反映OFF）', date, shift);
     }).then(ok => {
       if (ok) {
         this.showToast('接続OK');
@@ -214,6 +211,7 @@ const App = {
     document.getElementById('date-select').addEventListener('change', e => {
       this.currentDate = e.target.value;
       this.loadSheet();
+      FireSync.listenSheet(this.currentDate, this.currentShift);
     });
 
     // Shift toggle
@@ -223,6 +221,7 @@ const App = {
         btn.classList.add('active');
         this.currentShift = btn.dataset.shift;
         this.loadSheet();
+        FireSync.listenSheet(this.currentDate, this.currentShift);
       });
     });
 
@@ -301,6 +300,7 @@ const App = {
 
   // ---- Load / Save Sheet ----
   _currentData: null,
+  _suppressSync: false,
 
   createEmptySheet() {
     return {
@@ -380,9 +380,6 @@ const App = {
 
     // Date list in menu
     this.renderDateList();
-
-    // Firebaseリスナーを現在の日付/シフトに切替
-    FireSync.listenSheet(this.currentDate, this.currentShift);
   },
 
   collectSheet() {
@@ -447,9 +444,9 @@ const App = {
   autoSave() {
     const d = this.collectSheet();
     Store.saveSheet(this.currentDate, this.currentShift, d);
-    // Firebase同期
-    FireSync.saveSheet(this.currentDate, this.currentShift, d);
-    // Update sync indicator briefly
+    if (!this._suppressSync) {
+      FireSync.saveSheet(this.currentDate, this.currentShift, d);
+    }
     const badge = document.getElementById('sync-status');
     badge.style.color = '#16a34a';
     setTimeout(() => { badge.style.color = ''; }, 1000);
@@ -512,6 +509,9 @@ const App = {
     document.getElementById('entry-level').value = '';
     document.getElementById('entry-note').value = '';
 
+    // 作業項目タブを初期化
+    this._renderWorkTabs();
+
     if (idx !== undefined && idx >= 0) {
       const entries = this._currentData?.reactors?.[this.currentReactor]?.entries || [];
       const e = entries[idx];
@@ -522,7 +522,6 @@ const App = {
         document.getElementById('entry-fc-total').value = e.fcTotal || '';
         document.getElementById('entry-level').value = e.level || '';
         document.getElementById('entry-note').value = e.note || '';
-        // 時間スロットを復元
         const times = this._getEntryTimes(e);
         this._renderTimeSlots(times);
       } else {
@@ -533,6 +532,51 @@ const App = {
     }
 
     modal.classList.remove('hidden');
+  },
+
+  _renderWorkTabs() {
+    const tabsEl = document.getElementById('entry-work-tabs');
+    const itemsEl = document.getElementById('entry-work-items');
+    tabsEl.innerHTML = '';
+    itemsEl.innerHTML = '';
+    itemsEl.classList.remove('open');
+
+    Object.entries(SENDAI_WORK_ITEMS).forEach(([catKey, items]) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ewt-btn';
+      btn.textContent = WORK_CATEGORY_LABELS[catKey];
+      btn.addEventListener('click', () => {
+        tabsEl.querySelectorAll('.ewt-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this._renderWorkItemList(catKey, items);
+      });
+      tabsEl.appendChild(btn);
+    });
+  },
+
+  _renderWorkItemList(catKey, items) {
+    const itemsEl = document.getElementById('entry-work-items');
+    itemsEl.innerHTML = '';
+    itemsEl.classList.add('open');
+
+    items.forEach(name => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ewi-btn';
+      btn.textContent = name;
+      btn.addEventListener('click', () => {
+        document.getElementById('entry-title').value = name;
+        itemsEl.classList.remove('open');
+        document.getElementById('entry-work-tabs').querySelectorAll('.ewt-btn').forEach(b => b.classList.remove('active'));
+        // デフォルト値を自動適用
+        const defaults = (typeof WORK_ITEM_DEFAULTS !== 'undefined') ? WORK_ITEM_DEFAULTS[name] : null;
+        if (defaults && defaults.catalyst) {
+          document.getElementById('entry-catalyst').value = defaults.catalyst;
+        }
+      });
+      itemsEl.appendChild(btn);
+    });
   },
 
   closeEntryModal() {
@@ -751,6 +795,7 @@ const App = {
         document.getElementById('date-select').value = date;
         document.querySelectorAll('.shift-btn').forEach(b => b.classList.toggle('active', b.dataset.shift === shift));
         this.loadSheet();
+        FireSync.listenSheet(this.currentDate, this.currentShift);
         this.toggleMenu(false);
       });
       list.appendChild(btn);
@@ -800,18 +845,7 @@ const App = {
   },
 
   // ---- Print A4 (引継帳フォーマット — Excel原紙準拠) ----
-  _reactorSVG() {
-    return `<svg viewBox="0 0 90 260" width="90" height="260" xmlns="http://www.w3.org/2000/svg">
-      <style>line,rect,circle,ellipse,path{stroke:#000;stroke-width:0.8;fill:none}</style>
-      <path d="M20,250 L35,220 L55,220 L70,250"/><line x1="20" y1="250" x2="70" y2="250"/><path d="M30,235 L60,235"/>
-      <rect x="25" y="50" width="40" height="170" rx="2"/><path d="M25,50 Q25,20 45,15 Q65,20 65,50"/><rect x="40" y="8" width="10" height="10"/>
-      <line x1="28" y1="90" x2="62" y2="90" stroke-dasharray="3,2"/><text x="45" y="75" text-anchor="middle" font-size="6" fill="#333" stroke="none">1st</text>
-      <line x1="28" y1="135" x2="62" y2="135" stroke-dasharray="3,2"/><text x="45" y="120" text-anchor="middle" font-size="6" fill="#333" stroke="none">2nd</text>
-      <line x1="28" y1="180" x2="62" y2="180" stroke-dasharray="3,2"/><text x="45" y="165" text-anchor="middle" font-size="6" fill="#333" stroke="none">3rd</text>
-      <path d="M25,220 Q25,230 45,235 Q65,230 65,220"/>
-      <line x1="65" y1="80" x2="80" y2="80"/><line x1="65" y1="125" x2="80" y2="125"/><line x1="65" y1="170" x2="80" y2="170"/>
-    </svg>`;
-  },
+  // 1シフト=1ページ、RX-01A(左) / RX-02A(右) 横並び、リアクター図なし
 
   _printCSS() {
     return `
@@ -819,73 +853,65 @@ const App = {
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:"MS Gothic","ＭＳ ゴシック","Noto Sans JP",monospace; font-size:7pt; line-height:1.3; }
 
-  .page { width:100%; }
+  .page { width:100%; height:100%; display:flex; flex-direction:column; }
   .header { text-align:center; margin-bottom:2pt; }
   .header h1 { font-size:9pt; margin:0; }
   .header h2 { font-size:11pt; margin:0; font-weight:bold; }
-  .header .date-line { font-size:9pt; margin:2pt 0; }
 
-  /* メインレイアウト: 左(実績) + 右(管理データ+チェック) */
-  .main-layout { display:flex; border:1.5pt solid #000; }
-  .left-area { flex:3; display:flex; flex-direction:column; }
-  .right-area { flex:1; border-left:1.5pt solid #000; display:flex; flex-direction:column; min-width:200pt; }
+  /* シフト情報行 */
+  .shift-info { display:flex; justify-content:space-between; align-items:center;
+    border:1pt solid #000; border-bottom:none; padding:2pt 6pt; font-size:8pt; }
+  .shift-info .shift-name { font-weight:bold; font-size:10pt; }
+  .shift-info-day { background:#e8e8e8; }
+  .shift-info-night { background:#444; color:#fff; }
 
-  /* シフトバー */
-  .shift-bar { display:flex; border-bottom:1pt solid #000; }
-  .shift-col { flex:1; }
-  .shift-label { text-align:center; font-weight:bold; font-size:8pt; padding:1pt 0; border-bottom:0.5pt solid #000; }
-  .shift-label-day { background:#d0d0d0; }
-  .shift-label-night { background:#333; color:#fff; }
-  .shift-meta { padding:1pt 3pt; font-size:6.5pt; border-bottom:0.5pt solid #000; }
-  .shift-meta-row { display:flex; justify-content:space-between; }
-  .shift-col + .shift-col { border-left:1.5pt solid #000; }
-  .shift-members { padding:1pt 3pt; font-size:6pt; color:#333; }
+  /* メインテーブル: RX-01A(左) | RX-02A(右) */
+  .main-table { display:flex; border:1.5pt solid #000; flex:1; min-height:0; }
+  .rx-col { flex:1; display:flex; flex-direction:column; }
+  .rx-col + .rx-col { border-left:1.5pt solid #000; }
 
-  /* リアクター行 */
-  .rx-row { display:flex; flex:1; border-bottom:1pt solid #000; }
-  .rx-row:last-child { border-bottom:none; }
-  .rx-half { flex:1; display:flex; padding:1pt; }
-  .rx-half + .rx-half { border-left:1.5pt solid #000; }
-  .rx-name { font-weight:bold; font-size:8pt; writing-mode:vertical-rl; text-orientation:mixed;
-    padding:1pt; border-right:0.5pt solid #999; display:flex; align-items:center; }
-  .rx-body { flex:1; display:flex; }
-  .rx-illust { width:70pt; display:flex; align-items:center; justify-content:center; border-right:0.5pt dotted #aaa; }
-  .rx-illust svg { width:60pt; height:auto; }
-  .rx-records { flex:1; display:flex; flex-direction:column; padding:1pt 2pt; position:relative; }
-  .rx-records-header { font-weight:bold; font-size:7pt; text-align:center;
-    border-bottom:0.5pt solid #000; margin-bottom:1pt; padding-bottom:1pt; }
+  /* RX列ヘッダー */
+  .rx-header { font-weight:bold; font-size:9pt; text-align:center;
+    padding:2pt 0; border-bottom:1pt solid #000; background:#f0f0f0; }
 
-  .entry-line { display:flex; min-height:9pt; border-bottom:0.5pt dotted #ccc; align-items:baseline; padding:0.3pt 0; }
-  .el-check { width:8pt; font-size:6pt; text-align:center; flex-shrink:0; }
-  .el-text { flex:1; font-size:6.5pt; white-space:pre-wrap; word-break:break-all; }
-  .el-note { color:#555; font-size:6pt; }
+  /* 実績エントリーエリア */
+  .rx-entries { flex:1; padding:2pt 3pt; overflow:hidden; }
 
-  .level-circle { position:absolute; top:1pt; right:1pt; }
+  .entry-row { display:flex; min-height:11pt; border-bottom:0.5pt solid #ccc; align-items:baseline; padding:0.5pt 0; }
+  .er-time { width:70pt; font-size:6.5pt; flex-shrink:0; }
+  .er-title { flex:1; font-size:7pt; font-weight:bold; }
+  .er-meta { font-size:6pt; color:#333; padding-left:4pt; }
+  .er-meta-line { display:flex; gap:6pt; font-size:6pt; padding:0 0 0.5pt 70pt; border-bottom:0.5pt dotted #ddd; }
+  .er-note { font-size:6pt; color:#555; padding:0 0 0.5pt 70pt; border-bottom:0.5pt dotted #eee; }
+  .entry-row.empty { border-bottom:0.5pt dotted #ddd; }
 
-  /* 右側: 管理データ */
-  .mgmt-section { border-bottom:1pt solid #000; padding:2pt 3pt; }
-  .mgmt-section:last-child { border-bottom:none; }
-  .mgmt-title { font-weight:bold; font-size:7pt; background:#eee; padding:1pt 3pt; margin:-2pt -3pt 2pt -3pt; border-bottom:0.5pt solid #000; }
-  .mgmt-row { display:flex; font-size:6.5pt; padding:1pt 0; border-bottom:0.5pt dotted #ddd; }
-  .mgmt-label { width:55pt; font-weight:bold; flex-shrink:0; }
-  .mgmt-value { flex:1; }
-  .mgmt-row-2col { display:flex; gap:4pt; }
-  .mgmt-col { flex:1; }
-  .mgmt-col-label { font-size:6pt; color:#666; }
-  .mgmt-col-value { font-size:7pt; font-weight:bold; }
+  /* 管理データ行（エントリー下部） */
+  .rx-mgmt { border-top:1pt solid #000; padding:2pt 3pt; font-size:6.5pt; }
+  .mgmt-grid { display:grid; grid-template-columns:1fr 1fr; gap:1pt 8pt; }
+  .mgmt-item { display:flex; gap:2pt; }
+  .mgmt-label { font-weight:bold; white-space:nowrap; }
+  .mgmt-value { }
 
-  /* 右側: チェック表 */
-  .check-section { flex:1; overflow:hidden; }
-  .check-title { font-weight:bold; font-size:7pt; background:#eee; padding:1pt 3pt; border-bottom:0.5pt solid #000; }
-  .check-table { width:100%; border-collapse:collapse; font-size:5.5pt; }
-  .check-table th { background:#f0f0f0; border:0.5pt solid #999; padding:1pt 2pt; font-weight:bold; text-align:center; white-space:nowrap; }
-  .check-table td { border:0.5pt solid #ccc; padding:0.5pt 2pt; }
-  .check-table td.checked { text-align:center; color:#16a34a; font-weight:bold; }
+  /* 下部: WBGT + 引継ぎ */
+  .bottom-area { display:flex; border:1.5pt solid #000; border-top:none; }
+  .bottom-left { flex:1; border-right:1pt solid #000; padding:2pt 4pt; }
+  .bottom-right { flex:2; padding:2pt 4pt; }
 
-  /* 右側: 触媒名 */
-  .catalyst-list { font-size:5.5pt; padding:1pt 3pt; }
-  .catalyst-list-title { font-weight:bold; font-size:6pt; margin-bottom:1pt; }
-  .catalyst-item { padding:0.3pt 0; border-bottom:0.5pt dotted #eee; }`;
+  .wbgt-title { font-weight:bold; font-size:7pt; margin-bottom:1pt; }
+  .wbgt-table { width:100%; border-collapse:collapse; font-size:6.5pt; }
+  .wbgt-table th { background:#f0f0f0; border:0.5pt solid #999; padding:1pt 3pt; font-weight:bold; text-align:center; }
+  .wbgt-table td { border:0.5pt solid #ccc; padding:1pt 3pt; text-align:center; }
+
+  .handover-title { font-weight:bold; font-size:7pt; margin-bottom:1pt; }
+  .handover-box { display:flex; gap:6pt; }
+  .handover-col { flex:1; }
+  .handover-label { font-weight:bold; font-size:6.5pt; border-bottom:0.5pt solid #000; margin-bottom:1pt; }
+  .handover-text { font-size:6.5pt; white-space:pre-wrap; word-break:break-all; min-height:20pt; }
+
+  /* 立会い・検査行 */
+  .inspection-row { display:flex; gap:8pt; font-size:6.5pt; padding:1pt 0; border-top:0.5pt solid #ccc; }
+  .insp-item { display:flex; gap:2pt; }
+  .insp-label { font-weight:bold; }`;
   },
 
   _buildEntryLines(shiftData, rxName) {
@@ -894,129 +920,101 @@ const App = {
     let html = '';
     entries.forEach(e => {
       const times = (e.times && e.times.length > 0) ? e.times : [{ start: e.start || '', end: e.end || '' }];
-      times.forEach((t, ti) => {
-        const label = ti === 0 ? (e.title || '') : '';
-        const timeStr = (t.start || '') + (t.start || t.end ? '～' : '') + (t.end || '');
-        const meta = [];
-        if (ti === 0 && e.catalyst) meta.push(e.catalyst);
-        if (ti === 0 && e.fcCount) meta.push(`${e.fcCount}/${e.fcTotal||'?'}FC`);
-        if (ti === 0 && e.level) meta.push(`Ⓛ${e.level}mm`);
-        html += `<div class="entry-line"><span class="el-check">${label?'□':''}</span><span class="el-text">${label}${timeStr?' '+timeStr:''}${meta.length?' '+meta.join(' '):''}</span></div>`;
-      });
-      if (e.note) html += `<div class="entry-line"><span class="el-check"></span><span class="el-text el-note">${this.esc(e.note)}</span></div>`;
+      const t0 = times[0] || {};
+      const timeStr = (t0.start || '') + (t0.start || t0.end ? ' ～ ' : '') + (t0.end || '');
+      html += `<div class="entry-row"><span class="er-time">${timeStr}</span><span class="er-title">${this.esc(e.title || '')}</span></div>`;
+      const meta = [];
+      if (e.catalyst) meta.push(`触媒: ${e.catalyst}`);
+      if (e.fcCount) meta.push(`FC: ${e.fcCount}/${e.fcTotal||'?'}`);
+      if (e.level) meta.push(`Ⓛ ${e.level}mm`);
+      if (meta.length > 0) html += `<div class="er-meta-line">${meta.join('　')}</div>`;
+      for (let ti = 1; ti < times.length; ti++) {
+        const t = times[ti];
+        const ts = (t.start || '') + (t.start || t.end ? ' ～ ' : '') + (t.end || '');
+        html += `<div class="entry-row"><span class="er-time">${ts}</span><span class="er-title"></span></div>`;
+      }
+      if (e.note) html += `<div class="er-note">${this.esc(e.note)}</div>`;
     });
-    if (rx.notes) html += `<div class="entry-line" style="margin-top:2pt;border-top:1px solid #999;padding-top:1pt"><span class="el-check"></span><span class="el-text" style="font-weight:bold">【引継ぎ】${this.esc(rx.notes)}</span></div>`;
-    const minLines = 14, currentLines = entries.length + (rx.notes ? 2 : 0);
-    for (let i = currentLines; i < minLines; i++) html += '<div class="entry-line empty"></div>';
+    const minLines = 12, currentLines = entries.length;
+    for (let i = currentLines; i < minLines; i++) html += '<div class="entry-row empty"></div>';
     return html;
   },
 
-  _buildLevelCircle(shiftData, rxName) {
-    const entries = shiftData?.reactors?.[rxName]?.entries || [];
-    let levelVal = '';
-    entries.forEach(e => { if (e.level) levelVal = e.level; });
-    return `<div class="level-circle"><svg viewBox="0 0 60 60" width="50" height="50"><circle cx="30" cy="30" r="28" stroke="#000" stroke-width="1" fill="none"/>${levelVal ? `<text x="30" y="34" text-anchor="middle" font-size="9" fill="#000" font-weight="bold">${levelVal}mm</text>` : ''}</svg></div>`;
-  },
-
-  _buildStatsSection(shiftData) {
+  _buildRxMgmt(shiftData, rxName) {
     const s = shiftData?.stats || {};
-    const insp = shiftData?.inspection || {};
-    return `
-      <div class="mgmt-row"><span class="mgmt-label">抜出/充填</span><span class="mgmt-value">${s.nukiStart||''}${s.nukiStart?'～':''}${s.nukiEnd||''} ${s.nukiCount||''}${s.nukiCount?'/':''}${s.nukiTotal||''}${s.nukiCount?' FC':''}</span></div>
-      <div class="mgmt-row"><span class="mgmt-label">Ⓛ レベル</span><span class="mgmt-value">${s.level ? s.level+' mm' : ''}</span></div>
-      <div class="mgmt-row"><span class="mgmt-label">作業時間</span><span class="mgmt-value">${s.workStart||''}${s.workStart?'～':''}${s.workEnd||''}</span></div>
-      <div class="mgmt-row"><span class="mgmt-label">触媒温度</span><span class="mgmt-value">${s.catalystTemp ? s.catalystTemp+' ℃' : ''}</span></div>
-      <div class="mgmt-row"><span class="mgmt-label">ﾄﾞﾗｲｱｲｽ</span><span class="mgmt-value">${s.dryIce ? s.dryIce+' kg' : ''}</span></div>
-      <div class="mgmt-row"><span class="mgmt-label">設備検査</span><span class="mgmt-value">${insp.equipment||''} 殿立会い</span></div>
-      <div class="mgmt-row"><span class="mgmt-label">製油</span><span class="mgmt-value">${insp.seiyu||''} 殿立会い</span></div>
-      <div class="mgmt-row"><span class="mgmt-label">GM承認</span><span class="mgmt-value">${insp.gm||''}</span></div>
-      <div class="mgmt-row"><span class="mgmt-label">自衛防</span><span class="mgmt-value">${insp.jieiho||''}</span></div>`;
+    const entries = shiftData?.reactors?.[rxName]?.entries || [];
+    let lastLevel = '';
+    entries.forEach(e => { if (e.level) lastLevel = e.level; });
+    return `<div class="mgmt-grid">
+      <div class="mgmt-item"><span class="mgmt-label">レベル:</span><span class="mgmt-value">${lastLevel ? lastLevel+' mm' : '―'}</span></div>
+      <div class="mgmt-item"><span class="mgmt-label">触媒温度:</span><span class="mgmt-value">${s.catalystTemp ? s.catalystTemp+' ℃' : '―'}</span></div>
+      <div class="mgmt-item"><span class="mgmt-label">ﾄﾞﾗｲｱｲｽ:</span><span class="mgmt-value">${s.dryIce ? s.dryIce+' kg' : '―'}</span></div>
+      <div class="mgmt-item"><span class="mgmt-label">FC:</span><span class="mgmt-value">${s.nukiCount ? s.nukiCount+'/'+(s.nukiTotal||'?') : '―'}</span></div>
+    </div>`;
   },
 
-  _buildCheckTable(dayData, nightData) {
-    const cats = Object.entries(SENDAI_WORK_ITEMS);
-    const dayChecks = dayData?.workChecks || {};
-    const nightChecks = nightData?.workChecks || {};
-    let html = '<table class="check-table"><thead><tr><th>工程</th><th>作業項目</th><th>昼</th><th>夜</th></tr></thead><tbody>';
-    cats.forEach(([catKey, items]) => {
-      const catLabel = WORK_CATEGORY_LABELS[catKey];
-      items.slice(0, 8).forEach((item, i) => {
-        const dayKey = `${catKey}:${item}`;
-        html += `<tr>${i===0?`<td rowspan="${Math.min(items.length,8)}" style="font-weight:bold;text-align:center;writing-mode:vertical-rl;font-size:5pt">${catLabel}</td>`:''}`;
-        html += `<td>${item}</td>`;
-        html += `<td class="${dayChecks[dayKey]?'checked':''}">${dayChecks[dayKey]?'✓':''}</td>`;
-        html += `<td class="${nightChecks[dayKey]?'checked':''}">${nightChecks[dayKey]?'✓':''}</td></tr>`;
-      });
-    });
+  _buildWbgtTable(shiftData) {
+    const wb = shiftData?.wbgt || [{}, {}, {}];
+    let html = `<table class="wbgt-table"><thead><tr><th></th><th>温度</th><th>湿度</th><th>WBGT</th></tr></thead><tbody>`;
+    for (let i = 0; i < 3; i++) {
+      html += `<tr><th>${i+1}回目</th><td>${wb[i]?.temp||''}</td><td>${wb[i]?.humidity||''}</td><td>${wb[i]?.wbgt||''}</td></tr>`;
+    }
     html += '</tbody></table>';
     return html;
   },
 
-  _buildCatalystList() {
-    return CATALYST_NAMES.map(n => `<div class="catalyst-item">${n}</div>`).join('');
-  },
-
-  _buildPageHtml(date, dayData, nightData, projName) {
+  _buildShiftPageHtml(date, shiftData, shiftType) {
     const dateObj = new Date(date + 'T00:00:00');
     const weekDays = ['日','月','火','水','木','金','土'];
     const dateStr = `${dateObj.getMonth()+1}月　${dateObj.getDate()}日（${weekDays[dateObj.getDay()]}）`;
-    const staff = Store.getStaff();
-    const halfStaff = Math.ceil(staff.length / 2);
-    const dayStaff = staff.slice(0, halfStaff).join('　');
-    const nightStaff = staff.slice(halfStaff).join('　');
+    const isDay = shiftType === 'day';
+    const shiftLabel = isDay ? '昼　勤' : '夜　勤';
+    const insp = shiftData?.inspection || {};
 
     return `
   <div class="header">
     <h1>ENEOS（株）仙台製油所</h1>
     <h2>RDS－RX－01＆02A　触媒交換工事実績表</h2>
-    <div class="date-line">${dateStr}</div>
   </div>
-  <div class="main-layout">
-    <!-- 左側: 実績エリア -->
-    <div class="left-area">
-      <div class="shift-bar">
-        <div class="shift-col">
-          <div class="shift-label shift-label-day">昼　勤</div>
-          <div class="shift-meta">
-            <div class="shift-meta-row"><span>天候（${dayData.weather||'　　'}）</span><span>担当：${dayData.supervisor||''}</span></div>
-          </div>
-          <div class="shift-members">${dayStaff}</div>
-        </div>
-        <div class="shift-col">
-          <div class="shift-label shift-label-night">夜　勤</div>
-          <div class="shift-meta">
-            <div class="shift-meta-row"><span>天候（${nightData.weather||'　　'}）</span><span>担当：${nightData.supervisor||''}</span></div>
-          </div>
-          <div class="shift-members">${nightStaff}</div>
-        </div>
-      </div>
-      <div class="rx-row">
-        <div class="rx-half"><div class="rx-name">RX-01A</div><div class="rx-body"><div class="rx-illust">${this._reactorSVG()}</div><div class="rx-records"><div class="rx-records-header">【作業実績】</div>${this._buildLevelCircle(dayData,'RX-01A')}${this._buildEntryLines(dayData,'RX-01A')}</div></div></div>
-        <div class="rx-half"><div class="rx-name">RX-01A</div><div class="rx-body"><div class="rx-illust">${this._reactorSVG()}</div><div class="rx-records"><div class="rx-records-header">【作業実績】</div>${this._buildLevelCircle(nightData,'RX-01A')}${this._buildEntryLines(nightData,'RX-01A')}</div></div></div>
-      </div>
-      <div class="rx-row">
-        <div class="rx-half"><div class="rx-name">RX-02A</div><div class="rx-body"><div class="rx-illust">${this._reactorSVG()}</div><div class="rx-records"><div class="rx-records-header">【作業実績】</div>${this._buildLevelCircle(dayData,'RX-02A')}${this._buildEntryLines(dayData,'RX-02A')}</div></div></div>
-        <div class="rx-half"><div class="rx-name">RX-02A</div><div class="rx-body"><div class="rx-illust">${this._reactorSVG()}</div><div class="rx-records"><div class="rx-records-header">【作業実績】</div>${this._buildLevelCircle(nightData,'RX-02A')}${this._buildEntryLines(nightData,'RX-02A')}</div></div></div>
+  <div class="shift-info ${isDay ? 'shift-info-day' : 'shift-info-night'}">
+    <span class="shift-name">${shiftLabel}</span>
+    <span>${dateStr}</span>
+    <span>天候（${shiftData.weather||'　　'}）</span>
+    <span>担当：${shiftData.supervisor||''}</span>
+  </div>
+  <div class="main-table">
+    <div class="rx-col">
+      <div class="rx-header">RX-01A</div>
+      <div class="rx-entries">${this._buildEntryLines(shiftData, 'RX-01A')}</div>
+      <div class="rx-mgmt">${this._buildRxMgmt(shiftData, 'RX-01A')}</div>
+    </div>
+    <div class="rx-col">
+      <div class="rx-header">RX-02A</div>
+      <div class="rx-entries">${this._buildEntryLines(shiftData, 'RX-02A')}</div>
+      <div class="rx-mgmt">${this._buildRxMgmt(shiftData, 'RX-02A')}</div>
+    </div>
+  </div>
+  <div class="bottom-area">
+    <div class="bottom-left">
+      <div class="wbgt-title">WBGT測定</div>
+      ${this._buildWbgtTable(shiftData)}
+      <div class="inspection-row">
+        <div class="insp-item"><span class="insp-label">設備:</span><span>${insp.equipment||''}</span></div>
+        <div class="insp-item"><span class="insp-label">製油:</span><span>${insp.seiyu||''}</span></div>
+        <div class="insp-item"><span class="insp-label">GM:</span><span>${insp.gm||''}</span></div>
+        <div class="insp-item"><span class="insp-label">自衛防:</span><span>${insp.jieiho||''}</span></div>
       </div>
     </div>
-    <!-- 右側: 管理データ + チェック表 -->
-    <div class="right-area">
-      <div class="mgmt-section">
-        <div class="mgmt-title">昼勤 管理データ</div>
-        ${this._buildStatsSection(dayData)}
-      </div>
-      <div class="mgmt-section">
-        <div class="mgmt-title">夜勤 管理データ</div>
-        ${this._buildStatsSection(nightData)}
-      </div>
-      <div class="check-section">
-        <div class="check-title">作業工程チェック</div>
-        ${this._buildCheckTable(dayData, nightData)}
-      </div>
-      <div class="mgmt-section">
-        <div class="catalyst-list">
-          <div class="catalyst-list-title">触媒名一覧</div>
-          ${this._buildCatalystList()}
+    <div class="bottom-right">
+      <div class="handover-title">引継ぎ事項</div>
+      <div class="handover-box">
+        <div class="handover-col">
+          <div class="handover-label">RX-01A</div>
+          <div class="handover-text">${this.esc(shiftData?.reactors?.['RX-01A']?.notes || '')}</div>
+        </div>
+        <div class="handover-col">
+          <div class="handover-label">RX-02A</div>
+          <div class="handover-text">${this.esc(shiftData?.reactors?.['RX-02A']?.notes || '')}</div>
         </div>
       </div>
     </div>
@@ -1026,14 +1024,13 @@ const App = {
   printA4() {
     this.collectSheet();
     const projName = Store.getSetting('projectName', '2026年仙台RDSリアクター触媒交換工事');
-    const dayData = Store.getSheet(this.currentDate, 'day') || this.createEmptySheet();
-    const nightData = Store.getSheet(this.currentDate, 'night') || this.createEmptySheet();
+    const shiftData = Store.getSheet(this.currentDate, this.currentShift) || this._currentData;
 
     const printHtml = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
-<title>${projName} ${this.currentDate}</title>
+<title>${projName} ${this.currentDate} ${this.currentShift === 'day' ? '昼勤' : '夜勤'}</title>
 <style>${this._printCSS()}</style>
 </head><body>
-<div class="page">${this._buildPageHtml(this.currentDate, dayData, nightData, projName)}</div>
+<div class="page">${this._buildShiftPageHtml(this.currentDate, shiftData, this.currentShift)}</div>
 </body></html>`;
 
     const w = window.open('', '_blank');
@@ -1045,22 +1042,18 @@ const App = {
   exportAllPDF() {
     const allKeys = Store.getDates();
     if (allKeys.length === 0) { this.showToast('データがありません'); return; }
-    const uniqueDates = [...new Set(allKeys.map(k => k.substring(0, 10)))].sort();
-    const savedDate = this.currentDate;
-    const savedShift = this.currentShift;
     const projName = Store.getSetting('projectName', '2026年仙台RDSリアクター触媒交換工事');
 
     let pagesHtml = '';
-    uniqueDates.forEach((date, i) => {
-      this.currentDate = date;
-      const dayData = Store.getSheet(date, 'day') || this.createEmptySheet();
-      const nightData = Store.getSheet(date, 'night') || this.createEmptySheet();
-      const pageBreak = i < uniqueDates.length - 1 ? 'page-break-after:always;' : '';
-      pagesHtml += `<div class="page" style="${pageBreak}">${this._buildPageHtml(date, dayData, nightData, projName)}</div>`;
+    const sortedKeys = [...allKeys].sort();
+    sortedKeys.forEach((k, i) => {
+      const parts = k.match(/^(\d{4}-\d{2}-\d{2})_(day|night)$/);
+      if (!parts) return;
+      const [, date, shift] = parts;
+      const shiftData = Store.getSheet(date, shift) || this.createEmptySheet();
+      const pageBreak = i < sortedKeys.length - 1 ? 'page-break-after:always;' : '';
+      pagesHtml += `<div class="page" style="${pageBreak}">${this._buildShiftPageHtml(date, shiftData, shift)}</div>`;
     });
-
-    this.currentDate = savedDate;
-    this.currentShift = savedShift;
 
     const w = window.open('', '_blank');
     w.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>全日分実績表</title>

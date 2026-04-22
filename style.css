@@ -441,6 +441,33 @@ body.not-authed .bottom-bar,
 body.not-authed .side-menu,
 body.not-authed .modal { display: none !important; }
 
+/* ---- Entry Work Tabs (実績入力モーダル内の作業項目タブ) ---- */
+.entry-work-tabs {
+  display: flex; gap: 4px; overflow-x: auto; padding: 4px 0;
+  -webkit-overflow-scrolling: touch;
+}
+.entry-work-tabs .ewt-btn {
+  flex-shrink: 0; padding: 4px 10px; border-radius: 14px;
+  font-size: 0.75rem; border: 1px solid var(--border); background: var(--bg-input);
+  color: var(--text-sub); cursor: pointer; white-space: nowrap;
+}
+.entry-work-tabs .ewt-btn.active {
+  background: var(--primary); color: #fff; border-color: var(--primary);
+}
+.entry-work-items {
+  max-height: 120px; overflow-y: auto; border: 1px solid var(--border);
+  border-radius: 8px; margin: 4px 0; display: none;
+}
+.entry-work-items.open { display: block; }
+.entry-work-items .ewi-btn {
+  display: block; width: 100%; text-align: left;
+  padding: 6px 10px; font-size: 0.8rem; border: none;
+  background: none; cursor: pointer; border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+.entry-work-items .ewi-btn:last-child { border-bottom: none; }
+.entry-work-items .ewi-btn:active { background: var(--primary-light); }
+
 /* ---- Print (not used, A4 is in printA4 function) ---- */
 @media print {
   body { display: none; }
