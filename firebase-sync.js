@@ -65,6 +65,33 @@ const FireSync = {
       .collection('audit');
   },
 
+  // 詳細監査ログを書込み（フィールド差分・実績操作などを残す）
+  async writeAuditDetail(entry) {
+    if (!this.isEnabled()) return;
+    try {
+      await this._auditRef().add({
+        ...entry,
+        userId: Auth.getUid(),
+        userName: Auth.getMemberName(),
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (e) {
+      console.warn('[FireSync] 監査詳細保存失敗:', e.message);
+    }
+  },
+
+  // 監査ログ一覧 (新しい順、デフォルト直近300件)
+  async listAudit(limit = 300) {
+    if (!this.isEnabled()) return [];
+    try {
+      const snap = await this._auditRef().orderBy('timestamp', 'desc').limit(limit).get();
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch (e) {
+      console.warn('[FireSync] 監査取得失敗:', e.message);
+      return [];
+    }
+  },
+
   // 保存時に updatedBy 情報を付与
   _withAuditFields(data) {
     return {

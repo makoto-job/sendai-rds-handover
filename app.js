@@ -8,6 +8,45 @@ function todayStr() { return new Date().toLocaleDateString('sv-SE'); }
 function nowISO() { return new Date().toISOString(); }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
+function csvEscape(v) {
+  const s = String(v == null ? '' : v);
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+// シート全体の差分イベント配列を返す (entries は別途記録するため除外)
+function diffSheet(oldData, newData) {
+  const events = [];
+  const date = newData.date;
+  const shift = newData.shift;
+  if (!oldData) {
+    events.push({ action: 'sheet_created', date, shift, sheetId: `${date}_${shift}` });
+    return events;
+  }
+  const cmp = (path, oldVal, newVal) => {
+    const o = oldVal == null ? '' : String(oldVal);
+    const n = newVal == null ? '' : String(newVal);
+    if (o !== n) events.push({ action: 'field_change', date, shift, sheetId: `${date}_${shift}`, field: path, before: o, after: n });
+  };
+  ['weather', 'supervisor'].forEach(k => cmp(k, oldData[k], newData[k]));
+  const statKeys = new Set([...Object.keys(oldData.stats || {}), ...Object.keys(newData.stats || {})]);
+  statKeys.forEach(k => cmp(`stats.${k}`, oldData.stats?.[k], newData.stats?.[k]));
+  const inspKeys = new Set([...Object.keys(oldData.inspection || {}), ...Object.keys(newData.inspection || {})]);
+  inspKeys.forEach(k => cmp(`inspection.${k}`, oldData.inspection?.[k], newData.inspection?.[k]));
+  const wbgtLen = Math.max((oldData.wbgt || []).length, (newData.wbgt || []).length);
+  for (let i = 0; i < wbgtLen; i++) {
+    ['temp', 'humidity', 'wbgt'].forEach(k => cmp(`wbgt[${i + 1}].${k}`, oldData.wbgt?.[i]?.[k], newData.wbgt?.[i]?.[k]));
+  }
+  const rxKeys = new Set([...Object.keys(oldData.reactors || {}), ...Object.keys(newData.reactors || {})]);
+  rxKeys.forEach(rxKey => cmp(`${rxKey}.notes`, oldData.reactors?.[rxKey]?.notes, newData.reactors?.[rxKey]?.notes));
+  const oldChecks = oldData.workChecks || {}, newChecks = newData.workChecks || {};
+  const allChecks = new Set([...Object.keys(oldChecks), ...Object.keys(newChecks)]);
+  allChecks.forEach(k => {
+    const o = oldChecks[k] ? '✓' : '', n = newChecks[k] ? '✓' : '';
+    if (o !== n) events.push({ action: 'work_check', date, shift, sheetId: `${date}_${shift}`, field: `workCheck:${k}`, before: o, after: n });
+  });
+  return events;
+}
+
 // ---- Storage ----
 const Store = {
   _get(key, def) { try { return JSON.parse(localStorage.getItem(key)) || def; } catch { return def; } },
@@ -60,6 +99,80 @@ const Store = {
       this._set('hiki_dates', merged);
     }
     return Object.keys(data.sheets || {}).length;
+  }
+};
+
+// ---- History (audit log) — ローカルキャッシュ + Firestore audit コレクションへ書込み ----
+const History = {
+  MAX_LOCAL: 1000,
+
+  _all() { return Store._get('hiki_history', []); },
+  _save(arr) { Store._set('hiki_history', arr); },
+
+  record(events) {
+    if (!Array.isArray(events)) events = [events];
+    if (events.length === 0) return;
+    const all = this._all();
+    events.forEach(ev => {
+      const entry = {
+        id: 'h_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        ts: nowISO(),
+        userName: (typeof Auth !== 'undefined' && Auth.getMemberName) ? Auth.getMemberName() : '(未ログイン)',
+        userId: (typeof Auth !== 'undefined' && Auth.getUid) ? Auth.getUid() : null,
+        ...ev
+      };
+      all.push(entry);
+      if (typeof FireSync !== 'undefined' && FireSync.isEnabled && FireSync.isEnabled()) {
+        FireSync.writeAuditDetail(ev).catch(() => {});
+      }
+    });
+    if (all.length > this.MAX_LOCAL) all.splice(0, all.length - this.MAX_LOCAL);
+    this._save(all);
+  },
+
+  getAll() { return this._all().slice().reverse(); },
+  clear() { this._save([]); }
+};
+
+// ---- Search (全シート横断テキスト検索) ----
+const Search = {
+  query(q) {
+    const needle = String(q || '').trim().toLowerCase();
+    if (!needle) return [];
+    const results = [];
+    const dates = Store.getDates();
+    dates.forEach(key => {
+      const sheet = Store._get(`hiki_${key}`, null);
+      if (!sheet) return;
+      const matches = [];
+      const hit = (label, text) => {
+        const s = String(text == null ? '' : text);
+        if (s && s.toLowerCase().includes(needle)) matches.push({ label, text: s });
+      };
+      hit('担当', sheet.supervisor);
+      hit('天候', sheet.weather);
+      const insp = sheet.inspection || {};
+      hit('立会(設備検査)', insp.equipment);
+      hit('立会(製油)', insp.seiyu);
+      hit('立会(GM承認)', insp.gm);
+      hit('立会(自衛防)', insp.jieiho);
+      Object.entries(sheet.reactors || {}).forEach(([rxKey, rx]) => {
+        hit(`${rxKey} 引継ぎ事項`, rx.notes);
+        (rx.entries || []).forEach((e, idx) => {
+          const tag = `${rxKey} 実績#${idx + 1}`;
+          hit(`${tag} 作業内容`, e.title);
+          hit(`${tag} 触媒`, e.catalyst);
+          hit(`${tag} 備考`, e.note);
+        });
+      });
+      if (matches.length > 0) {
+        const date = key.substring(0, 10);
+        const shift = key.substring(11);
+        results.push({ date, shift, key, matches });
+      }
+    });
+    results.sort((a, b) => b.key.localeCompare(a.key));
+    return results;
   }
 };
 
@@ -268,6 +381,16 @@ const App = {
     document.getElementById('btn-import').addEventListener('click', () => document.getElementById('import-file').click());
     document.getElementById('import-file').addEventListener('change', e => this.importJSON(e));
     document.getElementById('btn-export-all-pdf').addEventListener('click', () => this.exportAllPDF());
+    document.getElementById('btn-export-csv').addEventListener('click', () => this.exportCSV());
+
+    // Search
+    document.getElementById('btn-search').addEventListener('click', () => this.openSearchModal());
+    document.getElementById('btn-search-close').addEventListener('click', () => this.closeSearchModal());
+    document.getElementById('search-input').addEventListener('input', () => this.runSearch());
+
+    // History
+    document.getElementById('btn-history').addEventListener('click', () => { this.toggleMenu(false); this.openHistoryModal(); });
+    document.getElementById('btn-history-close').addEventListener('click', () => this.closeHistoryModal());
 
     // Account
     document.getElementById('btn-signout').addEventListener('click', () => this.signOut());
@@ -435,14 +558,23 @@ const App = {
   },
 
   saveCurrentSheet() {
+    const oldData = Store.getSheet(this.currentDate, this.currentShift);
     const d = this.collectSheet();
+    const events = diffSheet(oldData, d);
+    if (events.length > 0) History.record(events);
     Store.saveSheet(this.currentDate, this.currentShift, d);
+    if (!this._suppressSync) {
+      FireSync.saveSheet(this.currentDate, this.currentShift, d);
+    }
     this.showToast('保存しました');
     this.renderDateList();
   },
 
   autoSave() {
+    const oldData = Store.getSheet(this.currentDate, this.currentShift);
     const d = this.collectSheet();
+    const events = diffSheet(oldData, d);
+    if (events.length > 0) History.record(events);
     Store.saveSheet(this.currentDate, this.currentShift, d);
     if (!this._suppressSync) {
       FireSync.saveSheet(this.currentDate, this.currentShift, d);
@@ -610,11 +742,22 @@ const App = {
     const rx = this._currentData.reactors[this.currentReactor];
     if (!rx.entries) rx.entries = [];
 
-    if (this._editingEntryIdx >= 0) {
+    const isEdit = this._editingEntryIdx >= 0;
+    const beforeEntry = isEdit ? rx.entries[this._editingEntryIdx] : null;
+    if (isEdit) {
       rx.entries[this._editingEntryIdx] = entry;
     } else {
       rx.entries.push(entry);
     }
+
+    History.record({
+      action: isEdit ? 'entry_updated' : 'entry_added',
+      date: this.currentDate, shift: this.currentShift,
+      sheetId: `${this.currentDate}_${this.currentShift}`,
+      reactor: this.currentReactor,
+      entry: { title: entry.title, catalyst: entry.catalyst, times: entry.times, fcCount: entry.fcCount, fcTotal: entry.fcTotal, level: entry.level, note: entry.note },
+      ...(isEdit && beforeEntry ? { before: { title: beforeEntry.title, catalyst: beforeEntry.catalyst, times: beforeEntry.times, fcCount: beforeEntry.fcCount, fcTotal: beforeEntry.fcTotal, level: beforeEntry.level, note: beforeEntry.note } } : {})
+    });
 
     this.closeEntryModal();
     this.renderEntries();
@@ -649,6 +792,13 @@ const App = {
     const rx = this._currentData.reactors[this.currentReactor];
     if (!rx.entries) rx.entries = [];
     rx.entries.push(entry);
+    History.record({
+      action: 'entry_added_from_work_item',
+      date: this.currentDate, shift: this.currentShift,
+      sheetId: `${this.currentDate}_${this.currentShift}`,
+      reactor: this.currentReactor,
+      entry: { title: entry.title, catalyst: entry.catalyst, times: entry.times }
+    });
     this.renderEntries();
   },
 
@@ -659,7 +809,15 @@ const App = {
     // 同じタイトルで自動生成されたエントリーを削除（最後に追加されたものから）
     for (let i = rx.entries.length - 1; i >= 0; i--) {
       if (rx.entries[i].title === itemName && rx.entries[i]._fromWorkItem) {
+        const removed = rx.entries[i];
         rx.entries.splice(i, 1);
+        History.record({
+          action: 'entry_removed_from_work_item',
+          date: this.currentDate, shift: this.currentShift,
+          sheetId: `${this.currentDate}_${this.currentShift}`,
+          reactor: this.currentReactor,
+          entry: { title: removed.title }
+        });
         break;
       }
     }
@@ -669,7 +827,15 @@ const App = {
   deleteEntry(idx) {
     if (!confirm('この実績を削除しますか？')) return;
     const rx = this._currentData.reactors[this.currentReactor];
+    const removed = rx.entries[idx];
     rx.entries.splice(idx, 1);
+    History.record({
+      action: 'entry_deleted',
+      date: this.currentDate, shift: this.currentShift,
+      sheetId: `${this.currentDate}_${this.currentShift}`,
+      reactor: this.currentReactor,
+      entry: removed ? { title: removed.title, catalyst: removed.catalyst, times: removed.times, note: removed.note } : null
+    });
     this.renderEntries();
     this.autoSave();
   },
@@ -849,40 +1015,43 @@ const App = {
 
   _printCSS() {
     return `
+  /* A4横 固定レイアウト — 行数によらず同一フォーマットを維持 */
   @page { size: A4 landscape; margin: 5mm; }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:"MS Gothic","ＭＳ ゴシック","Noto Sans JP",monospace; font-size:7pt; line-height:1.3; }
+  html, body { width:287mm; height:200mm; }
+  body { font-family:"MS Gothic","ＭＳ ゴシック","Noto Sans JP",monospace; font-size:7pt; line-height:1.3; overflow:hidden; }
 
   .page { width:100%; height:100%; display:flex; flex-direction:column; }
-  .header { text-align:center; margin-bottom:2pt; }
+  .header { flex:0 0 auto; text-align:center; margin-bottom:2pt; }
   .header h1 { font-size:9pt; margin:0; }
   .header h2 { font-size:11pt; margin:0; font-weight:bold; }
 
   /* シフト情報行 */
-  .shift-info { display:flex; justify-content:space-between; align-items:center;
+  .shift-info { flex:0 0 auto; display:flex; justify-content:space-between; align-items:center;
     border:1pt solid #000; border-bottom:none; padding:2pt 6pt; font-size:8pt; }
   .shift-info .shift-name { font-weight:bold; font-size:10pt; }
   .shift-info-day { background:#e8e8e8; }
   .shift-info-night { background:#444; color:#fff; }
 
   /* メインテーブル: RX-01A(左) | RX-02A(右) */
-  .main-table { display:flex; border:1.5pt solid #000; flex:1; min-height:0; }
-  .rx-col { flex:1; display:flex; flex-direction:column; }
+  .main-table { display:flex; border:1.5pt solid #000; flex:1 1 0; min-height:0; overflow:hidden; }
+  .rx-col { flex:1; display:flex; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }
   .rx-col + .rx-col { border-left:1.5pt solid #000; }
 
   /* RX列ヘッダー */
-  .rx-header { font-weight:bold; font-size:9pt; text-align:center;
+  .rx-header { flex:0 0 auto; font-weight:bold; font-size:9pt; text-align:center;
     padding:2pt 0; border-bottom:1pt solid #000; background:#f0f0f0; }
 
-  /* 実績エントリーエリア */
-  .rx-entries { flex:1; padding:2pt 3pt; overflow:hidden; }
+  /* 実績エントリーエリア — 過剰行は overflow:hidden で切り捨て、レイアウト不変 */
+  .rx-entries { flex:1; padding:2pt 3pt; overflow:hidden; min-height:0; display:flex; flex-direction:column; }
 
-  .entry-row { display:flex; min-height:11pt; border-bottom:0.5pt solid #ccc; align-items:baseline; padding:0.5pt 0; }
-  .er-time { width:70pt; font-size:6.5pt; flex-shrink:0; }
-  .er-title { flex:1; font-size:7pt; font-weight:bold; }
+  /* 実績行: 高さを固定 (内容にかかわらず常に同じ罫線間隔) */
+  .entry-row { flex:0 0 11pt; height:11pt; display:flex; border-bottom:0.5pt solid #ccc; align-items:baseline; padding:0.5pt 0; overflow:hidden; }
+  .er-time { width:70pt; font-size:6.5pt; flex-shrink:0; white-space:nowrap; overflow:hidden; }
+  .er-title { flex:1; font-size:7pt; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .er-meta { font-size:6pt; color:#333; padding-left:4pt; }
-  .er-meta-line { display:flex; gap:6pt; font-size:6pt; padding:0 0 0.5pt 70pt; border-bottom:0.5pt dotted #ddd; }
-  .er-note { font-size:6pt; color:#555; padding:0 0 0.5pt 70pt; border-bottom:0.5pt dotted #eee; }
+  .er-meta-line { flex:0 0 9pt; height:9pt; display:flex; gap:6pt; font-size:6pt; padding:0 0 0.5pt 70pt; border-bottom:0.5pt dotted #ddd; overflow:hidden; }
+  .er-note { flex:0 0 9pt; height:9pt; font-size:6pt; color:#555; padding:0 0 0.5pt 70pt; border-bottom:0.5pt dotted #eee; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
   .entry-row.empty { border-bottom:0.5pt dotted #ddd; }
 
   /* 管理データ行（エントリー下部） */
@@ -935,8 +1104,18 @@ const App = {
       }
       if (e.note) html += `<div class="er-note">${this.esc(e.note)}</div>`;
     });
-    const minLines = 12, currentLines = entries.length;
-    for (let i = currentLines; i < minLines; i++) html += '<div class="entry-row empty"></div>';
+    // 実領域に対する行数 (entry-row=11pt + er-meta-line/er-note=9pt) を概算で埋める
+    // .rx-entries 領域は約190pt → 11pt × 17行 が上限。安全のため18本で埋め、超過は overflow:hidden で切り捨て
+    const minLines = 18;
+    let usedLines = 0;
+    entries.forEach(e => {
+      const times = (e.times && e.times.length > 0) ? e.times : [{}];
+      usedLines += times.length;
+      const metaCount = (e.catalyst ? 1 : 0) + (e.fcCount ? 0 : 0) + (e.level ? 0 : 0);
+      if (e.catalyst || e.fcCount || e.level) usedLines += 0.8;  // er-meta-line は9pt なので約0.8行分
+      if (e.note) usedLines += 0.8;
+    });
+    for (let i = Math.ceil(usedLines); i < minLines; i++) html += '<div class="entry-row empty"></div>';
     return html;
   },
 
@@ -1060,6 +1239,111 @@ const App = {
     <style>${this._printCSS()}</style></head><body>${pagesHtml}</body></html>`);
     w.document.close();
     setTimeout(() => w.print(), 400);
+  },
+
+  // ---- CSV Export (実績エントリ単位、1行=1エントリ) ----
+  exportCSV() {
+    const headers = ['日付', 'シフト', '担当', '天候', 'リアクター', '作業内容', '触媒', '開始時刻', '終了時刻', 'FC数', 'FC合計', 'レベル(mm)', '備考'];
+    const rows = [headers];
+    const dates = Store.getDates();
+    let entryCount = 0;
+    dates.forEach(key => {
+      const sheet = Store._get(`hiki_${key}`, null);
+      if (!sheet) return;
+      const date = key.substring(0, 10);
+      const shiftLabel = key.endsWith('day') ? '昼勤' : '夜勤';
+      const supervisor = sheet.supervisor || '';
+      const weather = sheet.weather || '';
+      Object.entries(sheet.reactors || {}).forEach(([rxKey, rx]) => {
+        (rx.entries || []).forEach(e => {
+          const times = (e.times && e.times.length > 0) ? e.times : [{ start: e.start || '', end: e.end || '' }];
+          times.forEach(t => {
+            rows.push([date, shiftLabel, supervisor, weather, rxKey, e.title || '', e.catalyst || '', t.start || '', t.end || '', e.fcCount || '', e.fcTotal || '', e.level || '', e.note || '']);
+            entryCount++;
+          });
+        });
+      });
+    });
+    if (entryCount === 0) { this.showToast('エクスポートする実績がありません'); return; }
+    const csv = '﻿' + rows.map(r => r.map(csvEscape).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `sendai_rds_entries_${todayStr()}.csv`; a.click();
+    URL.revokeObjectURL(url);
+    this.showToast(`${entryCount}件の実績をCSV出力しました`);
+  },
+
+  // ---- Search Modal ----
+  openSearchModal() {
+    document.getElementById('search-input').value = '';
+    document.getElementById('search-results').innerHTML = '<div class="empty-msg">キーワードを入力してください</div>';
+    document.getElementById('modal-search').classList.remove('hidden');
+    setTimeout(() => document.getElementById('search-input').focus(), 50);
+  },
+  closeSearchModal() { document.getElementById('modal-search').classList.add('hidden'); },
+  runSearch() {
+    const q = document.getElementById('search-input').value;
+    const results = Search.query(q);
+    const container = document.getElementById('search-results');
+    if (!q.trim()) { container.innerHTML = '<div class="empty-msg">キーワードを入力してください</div>'; return; }
+    if (results.length === 0) { container.innerHTML = '<div class="empty-msg">該当データなし</div>'; return; }
+    container.innerHTML = results.map(r => {
+      const shiftLabel = r.shift === 'day' ? '昼勤' : '夜勤';
+      const matchHtml = r.matches.slice(0, 3).map(m => {
+        return `<div class="search-match"><span class="search-tag">${this.esc(m.label)}</span><span class="search-snippet">${this.esc(this._snippet(m.text, q.trim()))}</span></div>`;
+      }).join('');
+      const more = r.matches.length > 3 ? `<div class="search-more">+ ${r.matches.length - 3}件</div>` : '';
+      return `<div class="search-result" data-date="${r.date}" data-shift="${r.shift}"><div class="search-header"><strong>${r.date}</strong> <span class="shift-pill">${shiftLabel}</span></div>${matchHtml}${more}</div>`;
+    }).join('');
+    container.querySelectorAll('.search-result').forEach(el => {
+      el.addEventListener('click', () => {
+        this.currentDate = el.dataset.date;
+        this.currentShift = el.dataset.shift;
+        document.getElementById('date-select').value = this.currentDate;
+        document.querySelectorAll('.shift-btn').forEach(b => b.classList.toggle('active', b.dataset.shift === this.currentShift));
+        this.loadSheet();
+        this.closeSearchModal();
+      });
+    });
+  },
+  _snippet(text, q) {
+    const lo = text.toLowerCase().indexOf(q.toLowerCase());
+    if (lo < 0) return text.length > 60 ? text.slice(0, 60) + '…' : text;
+    const start = Math.max(0, lo - 20);
+    const end = Math.min(text.length, lo + q.length + 30);
+    return (start > 0 ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : '');
+  },
+
+  // ---- History Modal ----
+  openHistoryModal() {
+    this._renderHistory();
+    document.getElementById('modal-history').classList.remove('hidden');
+  },
+  closeHistoryModal() { document.getElementById('modal-history').classList.add('hidden'); },
+  _renderHistory() {
+    const all = History.getAll();
+    const container = document.getElementById('history-list');
+    if (all.length === 0) { container.innerHTML = '<div class="empty-msg">履歴なし</div>'; return; }
+    container.innerHTML = all.slice(0, 300).map(ev => {
+      const t = new Date(ev.ts).toLocaleString('ja-JP', { hour12: false });
+      const target = `${ev.date || ''} ${ev.shift === 'day' ? '昼' : ev.shift === 'night' ? '夜' : ''}`.trim();
+      let body = '';
+      if (ev.action === 'field_change' || ev.action === 'work_check') {
+        body = `<span class="hist-field">${this.esc(ev.field)}</span>: <span class="hist-before">${this.esc(ev.before || '∅')}</span> → <span class="hist-after">${this.esc(ev.after || '∅')}</span>`;
+      } else if (ev.action === 'entry_added' || ev.action === 'entry_added_from_work_item') {
+        body = `<span class="hist-tag">追加</span> [${ev.reactor || ''}] ${this.esc(ev.entry?.title || '')}`;
+      } else if (ev.action === 'entry_updated') {
+        body = `<span class="hist-tag">更新</span> [${ev.reactor || ''}] ${this.esc(ev.entry?.title || '')}`;
+      } else if (ev.action === 'entry_deleted' || ev.action === 'entry_removed_from_work_item') {
+        body = `<span class="hist-tag hist-del">削除</span> [${ev.reactor || ''}] ${this.esc(ev.entry?.title || '')}`;
+      } else if (ev.action === 'sheet_created') {
+        body = `<span class="hist-tag">新規シート作成</span>`;
+      } else {
+        body = this.esc(ev.action || '');
+      }
+      return `<div class="history-item"><div class="history-meta"><span class="history-time">${t}</span><span class="history-who">${this.esc(ev.userName || '?')}</span><span class="history-target">${target}</span></div><div class="history-body">${body}</div></div>`;
+    }).join('');
   },
 
   // ---- Import / Export ----

@@ -9,7 +9,10 @@
   <meta name="apple-mobile-web-app-title" content="引継帳">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://www.google.com https://www.googleapis.com https://apis.google.com https://*.firebaseapp.com; style-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com; connect-src 'self' https://*.googleapis.com https://*.google.com https://*.firebaseio.com https://*.firebaseapp.com https://*.cloudfunctions.net wss://*.firebaseio.com; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; frame-src https://www.google.com https://*.firebaseapp.com https://*.googleapis.com;">
   <link rel="manifest" href="manifest.json">
-  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="icons/icon-192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
   <title>仙台RDS 引継帳</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -51,6 +54,9 @@
     <h1 class="app-title">仙台RDS 引継帳</h1>
     <div class="top-bar-actions">
       <span id="sync-status" class="sync-badge" title="同期状態">●</span>
+      <button id="btn-search" class="icon-btn" aria-label="検索">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
       <button id="btn-print" class="icon-btn" aria-label="印刷">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
       </button>
@@ -290,6 +296,12 @@
           <div class="menu-item">
             <button id="btn-export-all-pdf" class="btn-secondary">全日分PDF生成</button>
           </div>
+          <div class="menu-item">
+            <button id="btn-export-csv" class="btn-secondary">CSVエクスポート（実績）</button>
+          </div>
+          <div class="menu-item">
+            <button id="btn-history" class="btn-secondary">変更履歴を見る</button>
+          </div>
         </div>
         <div class="menu-section">
           <h3>日付一覧</h3>
@@ -351,6 +363,35 @@
             </button>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 検索モーダル ===== -->
+  <div id="modal-search" class="modal hidden">
+    <div class="modal-content modal-sm">
+      <div class="modal-header">
+        <button id="btn-search-close" class="icon-btn">✕</button>
+        <h2>検索</h2>
+        <span style="width:48px"></span>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="search-input" class="form-input" placeholder="作業内容・備考・担当者などを検索">
+        <div id="search-results" class="search-results"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 履歴モーダル ===== -->
+  <div id="modal-history" class="modal hidden">
+    <div class="modal-content modal-sm">
+      <div class="modal-header">
+        <button id="btn-history-close" class="icon-btn">✕</button>
+        <h2>変更履歴</h2>
+        <span style="width:48px"></span>
+      </div>
+      <div class="modal-body">
+        <div id="history-list" class="history-list"></div>
       </div>
     </div>
   </div>
