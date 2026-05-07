@@ -1015,10 +1015,10 @@ const App = {
 
   _printCSS() {
     return `
-  /* A4横 固定レイアウト — 行数によらず同一フォーマットを維持 */
-  @page { size: A4 landscape; margin: 5mm; }
+  /* A4縦 固定レイアウト — 行数によらず同一フォーマットを維持、余白最小 */
+  @page { size: A4 portrait; margin: 3mm; }
   * { margin:0; padding:0; box-sizing:border-box; }
-  html, body { width:287mm; height:200mm; }
+  html, body { width:204mm; height:291mm; }
   body { font-family:"MS Gothic","ＭＳ ゴシック","Noto Sans JP",monospace; font-size:7pt; line-height:1.3; overflow:hidden; }
 
   .page { width:100%; height:100%; display:flex; flex-direction:column; }
@@ -1104,15 +1104,14 @@ const App = {
       }
       if (e.note) html += `<div class="er-note">${this.esc(e.note)}</div>`;
     });
-    // 実領域に対する行数 (entry-row=11pt + er-meta-line/er-note=9pt) を概算で埋める
-    // .rx-entries 領域は約190pt → 11pt × 17行 が上限。安全のため18本で埋め、超過は overflow:hidden で切り捨て
-    const minLines = 18;
+    // A4縦の rx-entries 領域は約180mm = 約510pt → 11pt × 約46行
+    // 安全に48行まで埋め、超過は overflow:hidden で切り捨て
+    const minLines = 48;
     let usedLines = 0;
     entries.forEach(e => {
       const times = (e.times && e.times.length > 0) ? e.times : [{}];
       usedLines += times.length;
-      const metaCount = (e.catalyst ? 1 : 0) + (e.fcCount ? 0 : 0) + (e.level ? 0 : 0);
-      if (e.catalyst || e.fcCount || e.level) usedLines += 0.8;  // er-meta-line は9pt なので約0.8行分
+      if (e.catalyst || e.fcCount || e.level) usedLines += 0.8;
       if (e.note) usedLines += 0.8;
     });
     for (let i = Math.ceil(usedLines); i < minLines; i++) html += '<div class="entry-row empty"></div>';
